@@ -54,6 +54,12 @@ object LSPPackageManager {
     class AppInfo(val app: ApplicationInfo, val label: String, val isModule: Boolean = false) : Parcelable {
         val isXposedModule: Boolean
             get() = isModule
+
+        // An LSPatch build carries its Base64 PatchConfig in the manifest's "lspatch" meta-data; its
+        // presence is the marker, read the same way whether the ApplicationInfo comes from an
+        // installed package or from a package archive on disk.
+        val isLSPatched: Boolean
+            get() = app.metaData?.containsKey("lspatch") == true
     }
 
     // A module is either a legacy one (manifest xposedminversion / assets/xposed_init) or a modern

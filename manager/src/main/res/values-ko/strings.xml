@@ -144,6 +144,10 @@
     <string name="patch_manifest_cleartext_desc">앱이 원래라면 거부했을 평문 HTTP 연결을 하도록 허용합니다. 트래픽을 살펴보는 모듈에 유용합니다.</string>
     <string name="patch_select_target">패치할 앱 선택</string>
     <string name="patch_target_loading">설치된 앱을 불러오는 중…</string>
+    <string name="patch_target_already_patched">이미 패치됨</string>
+    <string name="patch_storage_patched_title">이미 LSPatch 앱입니다</string>
+    <string name="patch_storage_patched_text">%1$s은(는) 이미 LSPatch로 패치되었습니다. 설치한 다음 해당 페이지에서 로더와 모듈을 관리하세요.</string>
+    <string name="patch_storage_installing">설치 중…</string>
     <string name="select_modules_title">모듈 추가</string>
     <string name="select_modules_none">설치된 Xposed 모듈이 없습니다</string>
     <string name="patch_modules_add_selected">선택한 %1$d개 추가</string>

@@ -144,6 +144,10 @@
     <string name="patch_manifest_cleartext_desc">Cho phép ứng dụng tạo kết nối HTTP thuần mà bình thường nó sẽ từ chối. Hữu ích cho mô-đun kiểm tra lưu lượng.</string>
     <string name="patch_select_target">Chọn ứng dụng để vá</string>
     <string name="patch_target_loading">Đang tải ứng dụng đã cài…</string>
+    <string name="patch_target_already_patched">Đã vá</string>
+    <string name="patch_storage_patched_title">Đã là ứng dụng LSPatch</string>
+    <string name="patch_storage_patched_text">%1$s đã được LSPatch vá. Cài đặt nó, sau đó quản lý các bộ nạp và mô-đun của nó từ trang của nó.</string>
+    <string name="patch_storage_installing">Đang cài đặt…</string>
     <string name="select_modules_title">Thêm mô-đun</string>
     <string name="select_modules_none">Chưa cài mô-đun Xposed nào</string>
     <string name="patch_modules_add_selected">Thêm %1$d mục đã chọn</string>

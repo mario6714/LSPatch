@@ -224,6 +224,10 @@
     <string name="patch_stage_writing">写入并签名</string>
     <string name="patch_stage_writing_note">这是最耗时的步骤</string>
     <string name="patch_target_loading">正在加载已安装的应用…</string>
+    <string name="patch_target_already_patched">已修补</string>
+    <string name="patch_storage_patched_title">已是 LSPatch 应用</string>
+    <string name="patch_storage_patched_text">%1$s 已由 LSPatch 修补。请先安装它，然后在其页面管理加载器和模块。</string>
+    <string name="patch_storage_installing">正在安装…</string>
     <string name="select_modules_none">未安装 Xposed 模块</string>
     <string name="select_modules_title">添加模块</string>
     <string name="settings_keystore_custom_desc">使用你自己的密钥库（BKS）签名。</string>

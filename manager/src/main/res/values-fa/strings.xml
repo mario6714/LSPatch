@@ -144,6 +144,10 @@
     <string name="patch_manifest_cleartext_desc">به برنامه اجازه می‌دهد اتصال‌های HTTP ساده‌ای را که وگرنه رد می‌کرد برقرار کند. برای ماژول بازرسی ترافیک سودمند است.</string>
     <string name="patch_select_target">برنامه‌ای برای پچ انتخاب کنید</string>
     <string name="patch_target_loading">در حال بارگذاری برنامه‌های نصب‌شده…</string>
+    <string name="patch_target_already_patched">قبلاً وصله شده</string>
+    <string name="patch_storage_patched_title">از قبل یک برنامهٔ LSPatch</string>
+    <string name="patch_storage_patched_text">%1$s قبلاً توسط LSPatch وصله شده است. آن را نصب کنید، سپس بارگذارها و ماژول‌هایش را از صفحهٔ آن مدیریت کنید.</string>
+    <string name="patch_storage_installing">در حال نصب…</string>
     <string name="select_modules_title">افزودن ماژول‌ها</string>
     <string name="select_modules_none">هیچ ماژول Xposed نصب نشده است</string>
     <string name="patch_modules_add_selected">افزودن %1$d مورد انتخاب‌شده</string>

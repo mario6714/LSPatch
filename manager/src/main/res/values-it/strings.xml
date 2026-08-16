@@ -144,6 +144,10 @@
     <string name="patch_manifest_cleartext_desc">Consente all\'app di aprire connessioni HTTP in chiaro che altrimenti rifiuterebbe. Utile per un modulo che ispeziona il traffico.</string>
     <string name="patch_select_target">Scegli un\'app a cui applicare la patch</string>
     <string name="patch_target_loading">Caricamento delle app installate…</string>
+    <string name="patch_target_already_patched">Già patchata</string>
+    <string name="patch_storage_patched_title">Già un\'app LSPatch</string>
+    <string name="patch_storage_patched_text">%1$s è già patchata da LSPatch. Installala, poi gestisci i suoi loader e moduli dalla sua pagina.</string>
+    <string name="patch_storage_installing">Installazione…</string>
     <string name="select_modules_title">Aggiungi moduli</string>
     <string name="select_modules_none">Nessun modulo Xposed installato</string>
     <string name="patch_modules_add_selected">Aggiungi i %1$d selezionati</string>

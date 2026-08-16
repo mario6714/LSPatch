@@ -144,6 +144,10 @@
     <string name="patch_manifest_cleartext_desc">Дозволити застосунку встановлювати звичайні HTTP-з\'єднання, які він інакше відхилив би. Корисно для модуля, що перевіряє трафік.</string>
     <string name="patch_select_target">Виберіть застосунок для патчу</string>
     <string name="patch_target_loading">Завантаження встановлених застосунків…</string>
+    <string name="patch_target_already_patched">Уже пропатчено</string>
+    <string name="patch_storage_patched_title">Уже застосунок LSPatch</string>
+    <string name="patch_storage_patched_text">%1$s уже пропатчено за допомогою LSPatch. Установіть його, потім керуйте його завантажувачами та модулями на його сторінці.</string>
+    <string name="patch_storage_installing">Встановлення…</string>
     <string name="select_modules_title">Додати модулі</string>
     <string name="select_modules_none">Не встановлено жодного модуля Xposed</string>
     <string name="patch_modules_add_selected">Додати %1$d вибраних</string>

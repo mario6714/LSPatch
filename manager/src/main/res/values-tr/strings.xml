@@ -144,6 +144,10 @@
     <string name="patch_manifest_cleartext_desc">Uygulamanın normalde reddedeceği düz HTTP bağlantıları kurmasına izin verir. Trafiği inceleyen bir modül için kullanışlıdır.</string>
     <string name="patch_select_target">Yamalanacak uygulamayı seçin</string>
     <string name="patch_target_loading">Kurulu uygulamalar yükleniyor…</string>
+    <string name="patch_target_already_patched">Zaten yamalı</string>
+    <string name="patch_storage_patched_title">Zaten bir LSPatch uygulaması</string>
+    <string name="patch_storage_patched_text">%1$s zaten LSPatch tarafından yamalanmış. Yükleyin, ardından yükleyicilerini ve modüllerini kendi sayfasından yönetin.</string>
+    <string name="patch_storage_installing">Yükleniyor…</string>
     <string name="select_modules_title">Modül ekle</string>
     <string name="select_modules_none">Kurulu Xposed modülü yok</string>
     <string name="patch_modules_add_selected">Seçili %1$d modülü ekle</string>

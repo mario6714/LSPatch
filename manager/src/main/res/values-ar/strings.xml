@@ -144,6 +144,10 @@
     <string name="patch_manifest_cleartext_desc">السماح للتطبيق بإجراء اتصالات HTTP الصريحة التي كان سيرفضها لولا ذلك. مفيد لوحدة تفحص حركة المرور.</string>
     <string name="patch_select_target">اختر تطبيقًا لترقيعه</string>
     <string name="patch_target_loading">جارٍ تحميل التطبيقات المثبَّتة…</string>
+    <string name="patch_target_already_patched">مُصحَّح بالفعل</string>
+    <string name="patch_storage_patched_title">تطبيق LSPatch بالفعل</string>
+    <string name="patch_storage_patched_text">%1$s مُصحَّح بالفعل بواسطة LSPatch. ثبّته، ثم أدِر مُحمّلاته ووحداته من صفحته.</string>
+    <string name="patch_storage_installing">جارٍ التثبيت…</string>
     <string name="select_modules_title">إضافة وحدات</string>
     <string name="select_modules_none">لا توجد وحدات Xposed مثبَّتة</string>
     <string name="patch_modules_add_selected">إضافة %1$d محدَّدة</string>

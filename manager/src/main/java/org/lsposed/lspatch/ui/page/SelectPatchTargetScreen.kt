@@ -6,14 +6,17 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.SearchOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -21,6 +24,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -30,6 +34,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -42,14 +47,19 @@ import org.lsposed.lspatch.data.model.PatchOrigin
 import org.lsposed.lspatch.data.model.PatchRequest
 import org.lsposed.lspatch.data.model.PatchTarget
 import org.lsposed.lspatch.data.repository.PatchRequestStore
+import org.lsposed.lspatch.ui.page.destinations.AppDetailScreenDestination
 import org.lsposed.lspatch.ui.page.destinations.NewPatchScreenDestination
 import org.lsposed.lspatch.ui.page.destinations.SelectPatchTargetScreenDestination
 import org.lsposed.lspatch.ui.util.LocalSnackbarHost
 import org.lsposed.lspatch.ui.viewmodel.SelectPatchTargetViewModel
 import org.lsposed.lspatch.util.LSPPackageManager
+import org.lsposed.lspatch.util.LSPPackageManager.AppInfo
+import org.lsposed.lspatch.util.ShizukuApi
 import org.matrix.vector.ui.PackageRow
 import org.matrix.vector.ui.PanelEmptyState
 import org.matrix.vector.ui.SearchField
+import android.content.pm.PackageInstaller
+import java.io.File
 import java.util.UUID
 
 // Plain apks plus app bundles: .xapk/.apks/.apkm carry no registered mime, so most file providers
@@ -81,6 +91,10 @@ fun SelectPatchTargetScreen(navigator: DestinationsNavigator) {
     val errorUnknown = stringResource(R.string.error_unknown)
     var query by remember { mutableStateOf("") }
     var reading by remember { mutableStateOf(false) }
+    // An apk picked from storage that is itself already an LSPatch build: there is nothing to patch,
+    // so it is offered for install instead, held here until the user confirms.
+    var alreadyPatched by remember { mutableStateOf<AppInfo?>(null) }
+    var installing by remember { mutableStateOf(false) }
 
     /**
      * Persists the request and hands over to the patch screen, replacing this one in the back
@@ -96,6 +110,29 @@ fun SelectPatchTargetScreen(navigator: DestinationsNavigator) {
         }
     }
 
+    /**
+     * Installs an already-patched apk picked from storage, then opens its page. The apk and its
+     * splits already sit in the temp dir from reading the manifest, so install is a plain session;
+     * on success the picker is left behind so Back returns to where patching was started.
+     */
+    fun installAlreadyPatched(app: AppInfo) {
+        scope.launch {
+            installing = true
+            val apkPaths = listOf(app.app.sourceDir) + (app.app.splitSourceDirs ?: emptyArray())
+            val (status, message) =
+                LSPPackageManager.installFiles(apkPaths.map(::File), ShizukuApi.isPermissionGranted)
+            installing = false
+            alreadyPatched = null
+            if (status == PackageInstaller.STATUS_SUCCESS) {
+                navigator.navigate(AppDetailScreenDestination(packageName = app.app.packageName)) {
+                    popUpTo(SelectPatchTargetScreenDestination) { inclusive = true }
+                }
+            } else {
+                snackbarHost.showSnackbar(message ?: errorUnknown)
+            }
+        }
+    }
+
     val storageLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { apks ->
             if (apks.isEmpty()) return@rememberLauncherForActivityResult
@@ -105,6 +142,12 @@ fun SelectPatchTargetScreen(navigator: DestinationsNavigator) {
                     .onSuccess { infos ->
                         reading = false
                         val primary = infos.first()
+                        // An apk that is already an LSPatch build cannot be patched again from here;
+                        // offer to install it and send the user to its page to manage loaders/modules.
+                        if (primary.isLSPatched) {
+                            alreadyPatched = primary
+                            return@onSuccess
+                        }
                         commit(
                             PatchRequest(
                                 token = UUID.randomUUID().toString(),
@@ -182,14 +225,63 @@ fun SelectPatchTargetScreen(navigator: DestinationsNavigator) {
                 contentPadding = PaddingValues(bottom = 20.dp),
             ) {
                 items(items = shown, key = { it.app.packageName }) { app ->
+                    // An app already patched by LSPatch has nothing to patch here: it is shown for
+                    // context but dimmed and not selectable — it is managed from its own page instead.
+                    val patched = app.isLSPatched
                     PackageRow(
                         icon = LSPPackageManager.getIcon(app),
                         label = app.label,
                         packageName = app.app.packageName,
-                        modifier = Modifier.clickable { commit(newRequestFor(app)) },
+                        modifier = if (patched) Modifier.alpha(0.38f)
+                        else Modifier.clickable { commit(newRequestFor(app)) },
+                        additionalContent = if (patched) {
+                            {
+                                Text(
+                                    text = stringResource(R.string.patch_target_already_patched),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        } else null,
                     )
                 }
             }
         }
+    }
+
+    alreadyPatched?.let { app ->
+        AlertDialog(
+            onDismissRequest = { if (!installing) alreadyPatched = null },
+            title = { Text(stringResource(R.string.patch_storage_patched_title)) },
+            text = {
+                if (installing) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(24.dp))
+                        Text(
+                            text = stringResource(R.string.patch_storage_installing),
+                            modifier = Modifier.padding(start = 16.dp),
+                        )
+                    }
+                } else {
+                    Text(stringResource(R.string.patch_storage_patched_text, app.label))
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { installAlreadyPatched(app) },
+                    enabled = !installing,
+                ) {
+                    Text(stringResource(R.string.patch_action_install))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { alreadyPatched = null },
+                    enabled = !installing,
+                ) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
     }
 }

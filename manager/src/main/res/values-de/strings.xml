@@ -144,6 +144,10 @@
     <string name="patch_manifest_cleartext_desc">Lässt die App Klartext-HTTP-Verbindungen herstellen, die sie sonst verweigern würde. Nützlich für ein Modul, das den Datenverkehr untersucht.</string>
     <string name="patch_select_target">Wähle eine App zum Patchen</string>
     <string name="patch_target_loading">Installierte Apps werden geladen…</string>
+    <string name="patch_target_already_patched">Bereits gepatcht</string>
+    <string name="patch_storage_patched_title">Bereits eine LSPatch-App</string>
+    <string name="patch_storage_patched_text">%1$s ist bereits von LSPatch gepatcht. Installiere es und verwalte dann seine Loader und Module auf seiner Seite.</string>
+    <string name="patch_storage_installing">Wird installiert…</string>
     <string name="select_modules_title">Module hinzufügen</string>
     <string name="select_modules_none">Keine Xposed-Module installiert</string>
     <string name="patch_modules_add_selected">%1$d ausgewählte hinzufügen</string>

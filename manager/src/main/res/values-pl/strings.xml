@@ -144,6 +144,10 @@
     <string name="patch_manifest_cleartext_desc">Pozwól aplikacji nawiązywać połączenia zwykłym HTTP, które w innym wypadku by odrzuciła. Przydatne dla modułu analizującego ruch.</string>
     <string name="patch_select_target">Wybierz aplikację do zmodyfikowania</string>
     <string name="patch_target_loading">Wczytywanie zainstalowanych aplikacji…</string>
+    <string name="patch_target_already_patched">Już załatane</string>
+    <string name="patch_storage_patched_title">To już aplikacja LSPatch</string>
+    <string name="patch_storage_patched_text">%1$s jest już załatana przez LSPatch. Zainstaluj ją, a następnie zarządzaj jej loaderami i modułami na jej stronie.</string>
+    <string name="patch_storage_installing">Instalowanie…</string>
     <string name="select_modules_title">Dodaj moduły</string>
     <string name="select_modules_none">Nie zainstalowano żadnych modułów Xposed</string>
     <string name="patch_modules_add_selected">Dodaj %1$d wybranych</string>

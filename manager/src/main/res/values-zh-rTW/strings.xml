@@ -144,6 +144,10 @@
     <string name="patch_manifest_cleartext_desc">允許應用程式建立原本會被拒絕的純 HTTP 連線。適用於流量檢查類的模組。</string>
     <string name="patch_select_target">選擇要修補的應用程式</string>
     <string name="patch_target_loading">正在載入已安裝的應用程式…</string>
+    <string name="patch_target_already_patched">已修補</string>
+    <string name="patch_storage_patched_title">已是 LSPatch 應用程式</string>
+    <string name="patch_storage_patched_text">%1$s 已由 LSPatch 修補。請先安裝它，然後在其頁面管理載入器和模組。</string>
+    <string name="patch_storage_installing">正在安裝…</string>
     <string name="select_modules_title">新增模組</string>
     <string name="select_modules_none">未安裝任何 Xposed 模組</string>
     <string name="patch_modules_add_selected">新增所選的 %1$d 個</string>

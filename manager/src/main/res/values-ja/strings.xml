@@ -144,6 +144,10 @@
     <string name="patch_manifest_cleartext_desc">通常は拒否される平文 HTTP 接続をアプリに許可します。通信を解析するモジュールに便利です。</string>
     <string name="patch_select_target">パッチするアプリを選択</string>
     <string name="patch_target_loading">インストール済みのアプリを読み込み中…</string>
+    <string name="patch_target_already_patched">パッチ済み</string>
+    <string name="patch_storage_patched_title">すでに LSPatch アプリです</string>
+    <string name="patch_storage_patched_text">%1$s はすでに LSPatch でパッチ済みです。インストールしてから、そのページでローダーとモジュールを管理してください。</string>
+    <string name="patch_storage_installing">インストール中…</string>
     <string name="select_modules_title">モジュールを追加</string>
     <string name="select_modules_none">Xposed モジュールがインストールされていません</string>
     <string name="patch_modules_add_selected">選択した %1$d 個を追加</string>

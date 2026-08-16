@@ -144,6 +144,10 @@
     <string name="patch_manifest_cleartext_desc">מאפשר לאפליקציה ליצור חיבורי HTTP רגילים שאחרת הייתה דוחה. שימושי למודול שבוחן תעבורה.</string>
     <string name="patch_select_target">בחרו אפליקציה להחלת טלאי</string>
     <string name="patch_target_loading">טוען אפליקציות מותקנות…</string>
+    <string name="patch_target_already_patched">כבר עבר טלאי</string>
+    <string name="patch_storage_patched_title">כבר אפליקציית LSPatch</string>
+    <string name="patch_storage_patched_text">‏%1$s כבר עבר טלאי על ידי LSPatch. התקן אותו, ולאחר מכן נהל את הטוענים והמודולים שלו מהעמוד שלו.</string>
+    <string name="patch_storage_installing">מתקין…</string>
     <string name="select_modules_title">הוספת מודולים</string>
     <string name="select_modules_none">לא מותקנים מודולי Xposed</string>
     <string name="patch_modules_add_selected">הוספת %1$d שנבחרו</string>

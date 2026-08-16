@@ -98,6 +98,10 @@
     <!-- Choosing what to patch, and which modules to embed -->
     <string name="patch_select_target">Choose an app to patch</string>
     <string name="patch_target_loading">Loading installed apps…</string>
+    <string name="patch_target_already_patched">Already patched</string>
+    <string name="patch_storage_patched_title">Already an LSPatch app</string>
+    <string name="patch_storage_patched_text">%1$s is already patched by LSPatch. Install it, then manage its loaders and modules from its page.</string>
+    <string name="patch_storage_installing">Installing…</string>
     <string name="select_modules_title">Add modules</string>
     <string name="select_modules_none">No Xposed modules installed</string>
     <string name="patch_modules_add_selected">Add %1$d selected</string>
