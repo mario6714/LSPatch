@@ -35,6 +35,10 @@ object ManagerService : IFrameworkService.Stub() {
     override fun getModules(): List<LoadedModule> {
         val list = callerModules(legacy = false)
         Log.d(TAG, "getModules: ${list.map { it.packageName }}")
+        // Record which modules this host process runs, so a companion's reload can find it as a
+        // target, and (best-effort, off this binder thread) hand each module's companion its service.
+        HotReloadRegistry.recordModules(Binder.getCallingUid(), Binder.getCallingPid(), list.map { it.packageName })
+        ManagerRemoteServices.pushToCompanionsAsync(list.map { it.packageName })
         return list
     }
 
@@ -55,6 +59,13 @@ object ManagerService : IFrameworkService.Stub() {
     }
 
     override fun attachProcessChannel(channel: IProcessChannel?) {
-        // LSPatch has no daemon to drive hot reload; the channel is accepted and ignored.
+        // The host's way back in, kept so the manager can drive a hot reload into it (manager mode
+        // plays the daemon). Keyed by the calling (uid, pid) -- the same process getModules() records
+        // its modules under -- and dropped when the channel dies.
+        if (channel == null) return
+        val uid = Binder.getCallingUid()
+        val pid = Binder.getCallingPid()
+        val name = lspApp.packageManager.getNameForUid(uid) ?: "uid$uid"
+        HotReloadRegistry.attach(uid, pid, name, channel)
     }
 }

@@ -14,6 +14,8 @@ import org.matrix.vector.ipc.IFrameworkService;
 import org.matrix.vector.ipc.IProcessChannel;
 import org.matrix.vector.ipc.LoadedModule;
 
+import io.github.libxposed.service.IXposedService;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -74,7 +76,8 @@ public class LocalApplicationService extends IFrameworkService.Stub {
                 module.versionCode = 0;
                 module.code = code;
                 module.applicationInfo = syntheticApplicationInfo(packageName, cacheApkPath);
-                module.service = new LocalModuleService();
+                module.service = EmbeddedRemoteServices.get(context)
+                        .moduleService(packageName, IXposedService.PROP_CAP_REMOTE);
                 modules.add(module);
             } catch (Throwable e) {
                 Log.e(TAG, "Error loading embedded module " + name, e);

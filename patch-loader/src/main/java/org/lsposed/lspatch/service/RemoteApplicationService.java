@@ -120,7 +120,10 @@ public class RemoteApplicationService implements IFrameworkService {
 
     @Override
     public void attachProcessChannel(IProcessChannel channel) throws RemoteException {
-        if (service != null) service.attachProcessChannel(channel);
+        // The manager drives hot reload but is a plain app, so the framework's own channel -- which
+        // gates on the system uid -- would refuse it. Hand the manager an LSPatch channel that runs the
+        // in-process swap for it instead; the framework's channel is unused without a daemon.
+        if (service != null) service.attachProcessChannel(new LSPatchProcessChannel());
     }
 
     @Override

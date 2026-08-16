@@ -9,17 +9,23 @@ import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.content.res.CompatibilityInfo;
 import android.os.Build;
+import android.os.IBinder;
 import android.os.RemoteException;
 import android.system.Os;
 import android.util.Log;
 
 import org.lsposed.lspatch.loader.util.FileUtils;
 import org.lsposed.lspatch.loader.util.XLog;
+import org.lsposed.lspatch.service.EmbeddedRemoteServices;
 import org.lsposed.lspatch.service.LocalApplicationService;
 import org.lsposed.lspatch.service.RemoteApplicationService;
+import org.lsposed.lspatch.share.LSPConfig;
+import org.lsposed.lspatch.share.remote.FrameworkInfo;
+import org.lsposed.lspatch.share.remote.LSPatchXposedService;
 import org.matrix.vector.Startup;
 import org.matrix.vector.ipc.IFrameworkService;
 import org.matrix.vector.impl.VectorLifecycleManager;
+import org.matrix.vector.impl.core.VectorModuleManager;
 import org.matrix.vector.impl.di.LegacyFrameworkDelegate;
 import org.matrix.vector.impl.di.LegacyPackageInfo;
 import org.matrix.vector.impl.di.VectorBootstrap;
@@ -28,6 +34,8 @@ import org.json.JSONObject;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedInit;
 
+import io.github.libxposed.service.IXposedService;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -35,6 +43,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -106,7 +115,7 @@ public class LSPApplication {
         // WARN: Since it uses `XResource`, the following class should not be initialized
         // before forkPostCommon is invoke. Otherwise, you will get failure of XResources
         Log.i(TAG, "Load modules");
-        loadModulesAndDispatch();
+        loadModulesAndDispatch(context);
         Log.i(TAG, "Modules initialized");
 
         switchAllClassLoader();
@@ -126,7 +135,7 @@ public class LSPApplication {
      * {@code handleLoadPackage} callbacks. {@code bootstrapXposed} has already loaded the legacy
      * modules and registered their callbacks.</p>
      */
-    private static void loadModulesAndDispatch() {
+    private static void loadModulesAndDispatch(Context context) {
         // Instantiate modern (libxposed) modules; guarded internally so the app-attach hook, were it
         // ever to fire, cannot load a second generation on top.
         try {
@@ -149,6 +158,43 @@ public class LSPApplication {
         var appComponentFactory = XposedHelpers.getObjectField(appLoadedApk, "mAppComponentFactory");
         var resDir = (String) XposedHelpers.getObjectField(appLoadedApk, "mResDir");
         var packageName = appInfo.packageName;
+
+        // Embed mode only: hand each embedded module its io.github.libxposed.service.IXposedService
+        // binder in-process, so a module that reads or writes its config through XposedServiceHelper --
+        // rather than through the hook-side XposedInterface -- works even with no companion app. In
+        // manager mode this is deliberately skipped: the hook reads through its manager-backed
+        // IModuleService (LoadedModule.service) and the companion app is handed the IXposedService by
+        // the manager's push, both onto the one manager store. Delivering a host-local IXposedService
+        // here as well would let the hook read a store the companion never writes.
+        // Pass asBinder() (not the typed Stub) so the module's asInterface builds a marshalling proxy
+        // across the class-loader boundary.
+        if (!config.optBoolean("useManager")) {
+            FrameworkInfo frameworkInfo = new FrameworkInfo("LSPatch",
+                    LSPConfig.instance.VERSION_NAME + " (" + LSPConfig.instance.VERSION_CODE + ")",
+                    LSPConfig.instance.VERSION_CODE, IXposedService.PROP_CAP_REMOTE);
+            for (String modulePkg : VectorModuleManager.INSTANCE.loadedModulePackages()) {
+                try {
+                    ClassLoader moduleCl = VectorModuleManager.INSTANCE.getModuleClassLoader(modulePkg);
+                    if (moduleCl == null) continue;
+                    Class<?> helper = moduleCl.loadClass("io.github.libxposed.service.XposedServiceHelper");
+                    if (helper.getClassLoader() == LSPatchXposedService.class.getClassLoader()) {
+                        // The module did not bundle the service client, so loadClass fell back to the
+                        // framework's own XposedServiceHelper, which carries no module listener. Nothing
+                        // to deliver -- a module that uses the service ships its own copy.
+                        continue;
+                    }
+                    var stub = EmbeddedRemoteServices.get(context).xposedService(modulePkg, frameworkInfo, packageName);
+                    Method onBinderReceived = helper.getDeclaredMethod("onBinderReceived", IBinder.class);
+                    onBinderReceived.setAccessible(true);
+                    onBinderReceived.invoke(null, stub.asBinder());
+                    Log.i(TAG, "Delivered XposedService to " + modulePkg);
+                } catch (ClassNotFoundException e) {
+                    // Module does not use the libxposed service API; nothing to deliver.
+                } catch (Throwable t) {
+                    Log.w(TAG, "XposedService delivery failed for " + modulePkg, t);
+                }
+            }
+        }
 
         // The modern and legacy lifecycles are dispatched independently so a failure in one cannot
         // stop the other, and neither can stop the rest of onLoad (class-loader switch, sig bypass).
