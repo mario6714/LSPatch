@@ -24,10 +24,8 @@ import org.lsposed.lspatch.share.remote.FrameworkInfo;
 import org.lsposed.lspatch.share.remote.LSPatchXposedService;
 import org.matrix.vector.Startup;
 import org.matrix.vector.ipc.IFrameworkService;
-import org.matrix.vector.impl.VectorLifecycleManager;
 import org.matrix.vector.impl.core.VectorModuleManager;
 import org.matrix.vector.impl.di.LegacyFrameworkDelegate;
-import org.matrix.vector.impl.di.LegacyPackageInfo;
 import org.matrix.vector.impl.di.VectorBootstrap;
 import org.json.JSONObject;
 
@@ -112,30 +110,49 @@ public class LSPApplication {
 
         Startup.initXposed(false, ActivityThread.currentProcessName(), context.getApplicationInfo().dataDir, service);
         Startup.bootstrapXposed(false);
+        // The target app's LoadedApk was built by hand (createLoadedApkWithContext) before these hooks
+        // existed, so its constructor never registered it with LoadedApkTracker. Register it now so
+        // createAppFactory / createOrUpdateClassLoaderLocked drive its modern + legacy package
+        // lifecycle exactly once when realizeLoadedApk() builds the class loader below -- and, crucially,
+        // so onPackageLoaded fires *before* the app's AppComponentFactory static initializer runs. A
+        // packed app can wire an anti-tamper check into that <clinit> (e.g. via a hijacked
+        // androidx.core.app.CoreComponentFactory -> System.loadLibrary -> JNI_OnLoad), and until the
+        // lifecycle and signature bypass are armed it would run unopposed.
+        Startup.trackLoadedApk(appLoadedApk);
+
         // WARN: Since it uses `XResource`, the following class should not be initialized
         // before forkPostCommon is invoke. Otherwise, you will get failure of XResources
         Log.i(TAG, "Load modules");
-        loadModulesAndDispatch(context);
+        loadModulesAndDeliver(context);
         Log.i(TAG, "Modules initialized");
 
-        switchAllClassLoader();
+        // Install signature bypass before the class loader -- and thus the app factory's <clinit> -- is
+        // realized, so a signature/APK read performed from that initializer already sees the spoof.
         SigBypass.doSigBypass(context, config.optInt("sigBypassLevel"));
+
+        // Realize the target's class loader now that hooks, modules and signature bypass are all armed.
+        // getClassLoader() -> createOrUpdateClassLoaderLocked -> createAppFactory triggers
+        // onPackageLoaded (pre-<clinit>) then, on return, onPackageReady and legacy handleLoadPackage.
+        realizeLoadedApk();
+
+        switchAllClassLoader();
 
         Log.i(TAG, "LSPatch bootstrap completed");
     }
 
     /**
-     * Replays the module lifecycle for the already-loaded target app.
+     * Loads the modern modules and delivers embed-mode service binders for the already-built target
+     * {@code LoadedApk}.
      *
-     * <p>Vector normally drives module loading from hooks it installs on {@code LoadedApk} during
-     * {@code bootstrapXposed}. But LSPatch has already built the app's {@code LoadedApk} by the time
-     * those hooks exist, so they never fire for the target package. This reproduces, for that one
-     * package, exactly what {@code LoadedApkHookers} would have done: instantiate the modern modules,
-     * then dispatch {@code onPackageLoaded}/{@code onPackageReady} to them and the legacy
-     * {@code handleLoadPackage} callbacks. {@code bootstrapXposed} has already loaded the legacy
-     * modules and registered their callbacks.</p>
+     * <p>The package lifecycle itself is no longer replayed here. {@link #onLoad} registers the target
+     * with {@code LoadedApkTracker} ({@code Startup.trackLoadedApk}) so the {@code createAppFactory} and
+     * {@code createOrUpdateClassLoaderLocked} hooks {@code bootstrapXposed} installs dispatch
+     * {@code onPackageLoaded} (before the app factory {@code <clinit>}), {@code onPackageReady} and the
+     * legacy {@code handleLoadPackage} exactly once when {@link #realizeLoadedApk} builds the class
+     * loader. Only the resource-directory registration -- normally done by the {@code LoadedApk}
+     * constructor hook, which never saw this hand-built instance -- is still performed manually.</p>
      */
-    private static void loadModulesAndDispatch(Context context) {
+    private static void loadModulesAndDeliver(Context context) {
         // Instantiate modern (libxposed) modules; guarded internally so the app-attach hook, were it
         // ever to fire, cannot load a second generation on top.
         try {
@@ -145,17 +162,6 @@ public class LSPApplication {
         }
 
         var appInfo = (ApplicationInfo) XposedHelpers.getObjectField(appLoadedApk, "mApplicationInfo");
-        ClassLoader classLoader;
-        try {
-            classLoader = appLoadedApk.getClassLoader();
-        } catch (Throwable t) {
-            Log.e(TAG, "Failed to obtain target class loader", t);
-            return;
-        }
-        Log.d(TAG, "Target class loader ready, dispatching lifecycle");
-        var defaultClassLoader = (ClassLoader) XposedHelpers.getObjectField(appLoadedApk, "mDefaultClassLoader");
-        if (defaultClassLoader == null) defaultClassLoader = classLoader;
-        var appComponentFactory = XposedHelpers.getObjectField(appLoadedApk, "mAppComponentFactory");
         var resDir = (String) XposedHelpers.getObjectField(appLoadedApk, "mResDir");
         var packageName = appInfo.packageName;
 
@@ -196,24 +202,12 @@ public class LSPApplication {
             }
         }
 
-        // The modern and legacy lifecycles are dispatched independently so a failure in one cannot
-        // stop the other, and neither can stop the rest of onLoad (class-loader switch, sig bypass).
-        try {
-            // Modern lifecycle: onPackageLoaded (API 29+) then onPackageReady (API 28+).
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                VectorLifecycleManager.INSTANCE.dispatchPackageLoaded(packageName, appInfo, true, defaultClassLoader);
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                VectorLifecycleManager.INSTANCE.dispatchPackageReady(
-                        packageName, appInfo, true, defaultClassLoader, classLoader, appComponentFactory);
-            }
-        } catch (Throwable t) {
-            Log.e(TAG, "Modern lifecycle dispatch failed", t);
-        }
-
-        // Legacy lifecycle. The resource-directory registration and the handleLoadPackage dispatch
-        // are guarded separately: registering the res dir loads XResources, whose runtime superclass
-        // may be unavailable, and that must not stop a module's method hooks from being installed.
+        // Register the resource directory for legacy resource hooking. The LoadedApk constructor hook
+        // normally does this, but the target's LoadedApk was hand-built before that hook existed.
+        // Guarded on its own: registering the res dir loads XResources, whose runtime superclass may be
+        // unavailable, and that must not stop the rest of bootstrap. The package lifecycle callbacks
+        // (onPackageLoaded/onPackageReady/handleLoadPackage) are dispatched by the LoadedApk hooks when
+        // realizeLoadedApk() builds the class loader -- see onLoad and loadModulesAndDeliver's javadoc.
         LegacyFrameworkDelegate delegate = VectorBootstrap.INSTANCE.getDelegate();
         if (delegate != null) {
             try {
@@ -227,12 +221,6 @@ public class LSPApplication {
                 // defining XResources, so XResources fails to link. Method hooking does not touch this
                 // path, so it is only warned about; see the project notes for the open investigation.
                 Log.w(TAG, "setPackageNameForResDir failed; legacy resource hooking is unavailable", t);
-            }
-            try {
-                delegate.onPackageLoaded(new LegacyPackageInfo(
-                        packageName, ActivityThread.currentProcessName(), classLoader, appInfo, true));
-            } catch (Throwable t) {
-                Log.e(TAG, "Legacy handleLoadPackage dispatch failed", t);
             }
         }
     }
@@ -287,30 +275,10 @@ public class LSPApplication {
             mPackages.remove(appInfo.packageName);
             appLoadedApk = activityThread.getPackageInfoNoCheck(appInfo, compatInfo);
             XposedHelpers.setObjectField(mBoundApplication, "info", appLoadedApk);
-            // Build the class loader now, while bootstrapXposed has not yet installed the LoadedApk
-            // hooks. Otherwise the first getClassLoader() call during lifecycle dispatch triggers
-            // those hooks and dispatches onPackageReady a second time.
-            appLoadedApk.getClassLoader();
-
-            var activityClientRecordClass = XposedHelpers.findClass("android.app.ActivityThread$ActivityClientRecord", ActivityThread.class.getClassLoader());
-            var fixActivityClientRecord = (BiConsumer<Object, Object>) (k, v) -> {
-                if (activityClientRecordClass.isInstance(v)) {
-                    var pkgInfo = XposedHelpers.getObjectField(v, "packageInfo");
-                    if (pkgInfo == stubLoadedApk) {
-                        Log.d(TAG, "fix loadedapk from ActivityClientRecord");
-                        XposedHelpers.setObjectField(v, "packageInfo", appLoadedApk);
-                    }
-                }
-            };
-            var mActivities = (Map<?, ?>) XposedHelpers.getObjectField(activityThread, "mActivities");
-            mActivities.forEach(fixActivityClientRecord);
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    var mLaunchingActivities = (Map<?, ?>) XposedHelpers.getObjectField(activityThread, "mLaunchingActivities");
-                    mLaunchingActivities.forEach(fixActivityClientRecord);
-                }
-            } catch (Throwable ignored) {
-            }
+            // The class loader is deliberately NOT built here. Building it runs the app's
+            // AppComponentFactory <clinit>, which a packed app can turn into a native anti-tamper gate;
+            // it must not run until the LoadedApk hooks, modules and signature bypass are armed. onLoad
+            // arms them and then calls realizeLoadedApk().
             Log.i(TAG, "hooked app initialized: " + appLoadedApk);
 
             var context = (Context) XposedHelpers.callStaticMethod(Class.forName("android.app.ContextImpl"), "createAppContext", activityThread, stubLoadedApk);
@@ -326,6 +294,38 @@ public class LSPApplication {
         } catch (Throwable e) {
             Log.e(TAG, "createLoadedApk", e);
             return null;
+        }
+    }
+
+    /**
+     * Builds the target app's class loader, now that the LoadedApk hooks, modules and signature bypass
+     * are armed. This is the point where the app's {@code AppComponentFactory} is instantiated and its
+     * {@code <clinit>} runs; the {@code createAppFactory} hook fires {@code onPackageLoaded} immediately
+     * before that, and the {@code createOrUpdateClassLoaderLocked} hook fires {@code onPackageReady} and
+     * the legacy {@code handleLoadPackage} on return. It then repoints any ActivityClientRecord still
+     * holding the stub LoadedApk at the real one.
+     */
+    private static void realizeLoadedApk() {
+        appLoadedApk.getClassLoader();
+
+        var activityClientRecordClass = XposedHelpers.findClass("android.app.ActivityThread$ActivityClientRecord", ActivityThread.class.getClassLoader());
+        var fixActivityClientRecord = (BiConsumer<Object, Object>) (k, v) -> {
+            if (activityClientRecordClass.isInstance(v)) {
+                var pkgInfo = XposedHelpers.getObjectField(v, "packageInfo");
+                if (pkgInfo == stubLoadedApk) {
+                    Log.d(TAG, "fix loadedapk from ActivityClientRecord");
+                    XposedHelpers.setObjectField(v, "packageInfo", appLoadedApk);
+                }
+            }
+        };
+        var mActivities = (Map<?, ?>) XposedHelpers.getObjectField(activityThread, "mActivities");
+        mActivities.forEach(fixActivityClientRecord);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                var mLaunchingActivities = (Map<?, ?>) XposedHelpers.getObjectField(activityThread, "mLaunchingActivities");
+                mLaunchingActivities.forEach(fixActivityClientRecord);
+            }
+        } catch (Throwable ignored) {
         }
     }
 
