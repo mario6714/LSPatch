@@ -1,384 +1,273 @@
 package org.lsposed.lspatch.ui.page.manage
 
-import android.app.Activity
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.util.Log
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.KeyboardCapslock
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.HourglassEmpty
+import androidx.compose.material.icons.rounded.SearchOff
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
-import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
-import com.ramcosta.composedestinations.result.NavResult
-import com.ramcosta.composedestinations.result.ResultRecipient
 import kotlinx.coroutines.launch
-import org.lsposed.lspatch.BuildConfig
 import org.lsposed.lspatch.R
-import org.lsposed.lspatch.config.ConfigManager
-import org.lsposed.lspatch.config.Configs
-import org.lsposed.lspatch.database.entity.Module
+import org.lsposed.lspatch.data.model.PatchStep
+import org.lsposed.lspatch.data.repository.PatchJobHost
 import org.lsposed.lspatch.lspApp
 import org.lsposed.lspatch.share.Constants
 import org.lsposed.lspatch.share.LSPConfig
-import org.lsposed.lspatch.ui.component.AnywhereDropdown
-import org.lsposed.lspatch.ui.component.AppItem
-import org.lsposed.lspatch.ui.component.LoadingDialog
-import org.lsposed.lspatch.ui.page.ACTION_APPLIST
-import org.lsposed.lspatch.ui.page.ACTION_STORAGE
-import org.lsposed.lspatch.ui.page.SelectAppsResult
+import org.lsposed.lspatch.ui.component.PatchProgressLine
+import org.lsposed.lspatch.ui.page.destinations.AppDetailScreenDestination
 import org.lsposed.lspatch.ui.page.destinations.NewPatchScreenDestination
-import org.lsposed.lspatch.ui.page.destinations.SelectAppsScreenDestination
+import org.lsposed.lspatch.ui.page.startNewPatch
 import org.lsposed.lspatch.ui.util.LocalSnackbarHost
 import org.lsposed.lspatch.ui.viewmodel.manage.AppManageViewModel
 import org.lsposed.lspatch.ui.viewstate.ProcessingState
 import org.lsposed.lspatch.util.LSPPackageManager
 import org.lsposed.lspatch.util.ShizukuApi
-import java.io.IOException
+import org.matrix.vector.ui.ApiBadge
+import org.matrix.vector.ui.ModuleRow
+import org.matrix.vector.ui.PanelEmptyState
+import org.matrix.vector.ui.REACH_ICON_SIZE
 
-private const val TAG = "AppManagePage"
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppManageBody(
-    navigator: DestinationsNavigator,
-    resultRecipient: ResultRecipient<SelectAppsScreenDestination, SelectAppsResult>
-) {
+fun AppManageBody(navigator: DestinationsNavigator, query: String) {
     val viewModel = viewModel<AppManageViewModel>()
     val snackbarHost = LocalSnackbarHost.current
     val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
+    var refreshing by remember { mutableStateOf(false) }
+    var sheetFor by remember { mutableStateOf<LSPPackageManager.AppInfo?>(null) }
+    val step by PatchJobHost.step.collectAsStateWithLifecycle()
 
-    if (viewModel.appList.isEmpty()) {
-        Box(Modifier.fillMaxSize()) {
-            Text(
-                modifier = Modifier.align(Alignment.Center),
-                text = run {
-                    if (LSPPackageManager.appList.isEmpty()) stringResource(R.string.manage_loading)
-                    else stringResource(R.string.manage_no_apps)
-                },
-                fontFamily = FontFamily.Serif,
-                style = MaterialTheme.typography.headlineSmall
+    when (val state = viewModel.optimizeState) {
+        is ProcessingState.Idle, is ProcessingState.Processing -> Unit
+        is ProcessingState.Done -> {
+            val optimizeSucceed = stringResource(R.string.manage_optimize_successfully)
+            val optimizeFailed = stringResource(R.string.manage_optimize_failed)
+            val forceStop = stringResource(R.string.manage_forcestop)
+            val stopped = stringResource(R.string.manage_forcestop_done)
+            LaunchedEffect(state) {
+                // Recompiling does not touch a process that is already running: it holds the code it
+                // was started with, so the newly-uncompiled methods only matter next launch. The
+                // restart is offered rather than done, because force-stopping an app the user is in
+                // the middle of using is not a side effect to spring on them.
+                val target = viewModel.lastOptimized
+                val result = snackbarHost.showSnackbar(
+                    message = if (state.result) optimizeSucceed else optimizeFailed,
+                    actionLabel = if (state.result && target != null) forceStop else null,
+                )
+                if (result == SnackbarResult.ActionPerformed && target != null) {
+                    ShizukuApi.runShellCommand("am force-stop $target")
+                    snackbarHost.showSnackbar(stopped)
+                }
+                viewModel.dispatch(AppManageViewModel.ViewAction.ClearOptimizeResult)
+            }
+        }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        // A patch started here and then walked away from is still running; without this the only
+        // evidence of it would be the app appearing, eventually, with no explanation.
+        PatchProgressLine(
+            step = step,
+            onClick = {
+                val active = PatchJobHost.active.value
+                if (active != null) navigator.navigate(NewPatchScreenDestination(token = active.token))
+                else PatchJobHost.acknowledge()
+            },
+        )
+
+        if (viewModel.appList.isEmpty()) {
+            val loading = LSPPackageManager.appList.isEmpty()
+            PanelEmptyState(
+                icon = if (loading) Icons.Rounded.HourglassEmpty else Icons.Rounded.Dashboard,
+                text = stringResource(if (loading) R.string.manage_loading else R.string.manage_no_apps),
             )
+            return@Column
         }
-    } else {
-        var scopeApp by rememberSaveable { mutableStateOf("") }
-        resultRecipient.onNavResult {
-            if (it is NavResult.Value) {
+
+        val shown = viewModel.appList.filter {
+            query.isBlank() ||
+                it.first.label.contains(query, true) ||
+                it.first.app.packageName.contains(query, true)
+        }
+        if (shown.isEmpty()) {
+            PanelEmptyState(
+                icon = Icons.Rounded.SearchOff,
+                text = stringResource(R.string.manage_no_match),
+            )
+            return@Column
+        }
+
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = {
                 scope.launch {
-                    val result = it.value as SelectAppsResult.MultipleApps
-                    ConfigManager.getModulesForApp(scopeApp).forEach {
-                        ConfigManager.deactivateModule(scopeApp, it)
-                    }
-                    result.selected.forEach {
-                        Log.d(TAG, "Activate ${it.app.packageName} for $scopeApp")
-                        ConfigManager.activateModule(scopeApp, Module(it.app.packageName, it.app.sourceDir))
-                    }
+                    refreshing = true
+                    LSPPackageManager.fetchAppList()
+                    refreshing = false
                 }
-            }
-        }
-
-        when (viewModel.updateLoaderState) {
-            is ProcessingState.Idle -> Unit
-            is ProcessingState.Processing -> LoadingDialog()
-            is ProcessingState.Done -> {
-                val it = viewModel.updateLoaderState as ProcessingState.Done
-                val updateSuccessfully = stringResource(R.string.manage_update_loader_successfully)
-                val updateFailed = stringResource(R.string.manage_update_loader_failed)
-                val copyError = stringResource(R.string.copy_error)
-                LaunchedEffect(Unit) {
-                    it.result.onSuccess {
-                        snackbarHost.showSnackbar(updateSuccessfully)
-                    }.onFailure {
-                        val result = snackbarHost.showSnackbar(updateFailed, copyError)
-                        if (result == SnackbarResult.ActionPerformed) {
-                            val cm = lspApp.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            cm.setPrimaryClip(ClipData.newPlainText("LSPatch", it.toString()))
-                        }
-                    }
-                    viewModel.dispatch(AppManageViewModel.ViewAction.ClearUpdateLoaderResult)
-                }
-            }
-        }
-        when (viewModel.optimizeState) {
-            is ProcessingState.Idle -> Unit
-            is ProcessingState.Processing -> LoadingDialog()
-            is ProcessingState.Done -> {
-                val it = viewModel.optimizeState as ProcessingState.Done
-                val optimizeSucceed = stringResource(R.string.manage_optimize_successfully)
-                val optimizeFailed = stringResource(R.string.manage_optimize_failed)
-                LaunchedEffect(Unit) {
-                    snackbarHost.showSnackbar(if (it.result) optimizeSucceed else optimizeFailed)
-                    viewModel.dispatch(AppManageViewModel.ViewAction.ClearOptimizeResult)
-                }
-            }
-        }
-
-        LazyColumn(Modifier.fillMaxHeight()) {
-            items(
-                items = viewModel.appList,
-                key = { it.first.app.packageName }
+            },
+        ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 20.dp),
             ) {
-                val isRolling = it.second.useManager && it.second.lspConfig.VERSION_CODE >= Constants.MIN_ROLLING_VERSION_CODE
-                val canUpdateLoader = !isRolling && it.second.lspConfig.VERSION_CODE < LSPConfig.instance.VERSION_CODE
-                var expanded by remember { mutableStateOf(false) }
-                AnywhereDropdown(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false },
-                    onClick = { expanded = true },
-                    onLongClick = { expanded = true },
-                    surface = {
-                        AppItem(
-                            icon = LSPPackageManager.getIcon(it.first),
-                            label = it.first.label,
-                            packageName = it.first.app.packageName,
-                            additionalContent = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = buildAnnotatedString {
-                                            val (text, color) =
-                                                if (it.second.useManager) stringResource(R.string.patch_local) to MaterialTheme.colorScheme.secondary
-                                                else stringResource(R.string.patch_integrated) to MaterialTheme.colorScheme.tertiary
-                                            append(AnnotatedString(text, SpanStyle(color = color)))
-                                            append("  ")
-                                            if (isRolling) append(stringResource(R.string.manage_rolling))
-                                            else append(it.second.lspConfig.VERSION_CODE.toString())
-                                        },
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontFamily = FontFamily.Serif,
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                    if (canUpdateLoader) {
-                                        with(LocalDensity.current) {
-                                            val size = MaterialTheme.typography.bodySmall.fontSize * 1.2
-                                            Icon(Icons.Filled.KeyboardCapslock, null, Modifier.size(size.toDp()))
-                                        }
-                                    }
-                                }
-                            }
-                        )
+                items(items = shown, key = { it.first.app.packageName }) { item ->
+                    val (appInfo, config) = item
+                    val local = config.useManager
+                    // The loader version is unified on the commit count. A rolling manager-backed loader
+                    // has no fixed commit to show, so it reads "Rolling"; anything older than this build's
+                    // loader carries the update mark and is upgraded from the detail page.
+                    val isRolling = local && config.lspConfig.VERSION_CODE >= Constants.MIN_ROLLING_VERSION_CODE
+                    val hasUpdate = !isRolling && config.lspConfig.VERSION_CODE < LSPConfig.instance.VERSION_CODE
+                    val loaderValue =
+                        if (isRolling) stringResource(R.string.manage_rolling)
+                        else config.lspConfig.VERSION_CODE.toString()
+                    val appVersion = remember(appInfo.app.packageName) {
+                        runCatching {
+                            lspApp.packageManager.getPackageInfo(appInfo.app.packageName, 0).versionName
+                        }.getOrNull().orEmpty()
                     }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(text = it.first.label, color = MaterialTheme.colorScheme.primary) },
-                        onClick = {}, enabled = false
-                    )
-                    val shizukuUnavailable = stringResource(R.string.shizuku_unavailable)
-                    if (canUpdateLoader || BuildConfig.DEBUG) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.manage_update_loader)) },
-                            onClick = {
-                                expanded = false
-                                scope.launch {
-                                    if (!ShizukuApi.isPermissionGranted) {
-                                        snackbarHost.showSnackbar(shizukuUnavailable)
-                                    } else {
-                                        viewModel.dispatch(AppManageViewModel.ViewAction.UpdateLoader(it.first, it.second))
-                                    }
-                                }
-                            }
-                        )
-                    }
-                    if (it.second.useManager) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.manage_module_scope)) },
-                            onClick = {
-                                expanded = false
-                                scope.launch {
-                                    scopeApp = it.first.app.packageName
-                                    val activated = ConfigManager.getModulesForApp(scopeApp).map { it.pkgName }.toSet()
-                                    val initialSelected = LSPPackageManager.appList.mapNotNullTo(ArrayList()) {
-                                        if (activated.contains(it.app.packageName)) it.app.packageName else null
-                                    }
-                                    navigator.navigate(SelectAppsScreenDestination(true, initialSelected))
-                                }
-                            }
-                        )
-                    }
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.manage_optimize)) },
+                    val moduleIcons = viewModel.moduleIcons[appInfo.app.packageName].orEmpty()
+                    ModuleRow(
+                        name = appInfo.label,
+                        versionName = appVersion,
+                        description = "",
+                        icon = {
+                            Icon(
+                                bitmap = LSPPackageManager.getIcon(appInfo),
+                                contentDescription = null,
+                                tint = Color.Unspecified,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        },
+                        apiBadge = { ApiBadge(label = "Loader", value = loaderValue) },
+                        hasUpdate = hasUpdate,
+                        // Tap opens the page; long press opens the quick actions. The icon is the
+                        // same target as the row, but carries no long press of its own -- it is a
+                        // selection handle everywhere else, and a second gesture on it would not be
+                        // discoverable.
                         onClick = {
-                            expanded = false
-                            scope.launch {
-                                if (!ShizukuApi.isPermissionGranted) {
-                                    snackbarHost.showSnackbar(shizukuUnavailable)
-                                } else {
-                                    viewModel.dispatch(AppManageViewModel.ViewAction.PerformOptimize(it.first))
-                                }
+                            navigator.navigate(AppDetailScreenDestination(packageName = appInfo.app.packageName))
+                        },
+                        onIconClick = {
+                            navigator.navigate(AppDetailScreenDestination(packageName = appInfo.app.packageName))
+                        },
+                        onLongClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            sheetFor = appInfo
+                        },
+                        // Apps carry no Xposed description; the note slot stands in with the package name
+                        // alone, on its own full-width line.
+                        note = {
+                            Text(
+                                text = appInfo.app.packageName,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        // The patch mode sits at the far left of the bottom reach band, opposite the
+                        // module icons on the right — Local (manager-backed, dynamic scope) vs
+                        // Integrated (modules baked in), the one distinction that changes how the app
+                        // is managed. On the band rather than a line of its own, so the row is compact.
+                        reachStart = {
+                            val modeColor =
+                                if (local) MaterialTheme.colorScheme.secondary
+                                else MaterialTheme.colorScheme.tertiary
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(modeColor.copy(alpha = 0.15f))
+                                    .padding(horizontal = 6.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = stringResource(if (local) R.string.patch_local else R.string.patch_integrated),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = modeColor,
+                                )
                             }
-                        }
+                        },
+                        // The modules this app reaches, as thumbnails then "+N". Handed to the row as data —
+                        // the row draws it bottom-right itself, the same corner a module's scope lands in,
+                        // so neither side is positioned by hand here.
+                        reachIcons = moduleIcons.map { bitmap ->
+                            {
+                                Image(
+                                    bitmap = bitmap,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(REACH_ICON_SIZE),
+                                )
+                            }
+                        },
+                        reachCount = moduleIcons.size,
                     )
-                    val uninstallSuccessfully = stringResource(R.string.manage_uninstall_successfully)
-                    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-                        if (result.resultCode == Activity.RESULT_OK) {
-                            scope.launch {
-                                snackbarHost.showSnackbar(uninstallSuccessfully)
-                            }
-                        }
-                    }
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.uninstall)) },
-                        onClick = {
-                            expanded = false
-                            val intent = Intent(Intent.ACTION_DELETE).apply {
-                                data = Uri.parse("package:${it.first.app.packageName}")
-                                putExtra(Intent.EXTRA_RETURN_RESULT, true)
-                            }
-                            launcher.launch(intent)
-                        }
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 20.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
                     )
                 }
             }
         }
+    }
+
+    sheetFor?.let { app ->
+        AppActionSheet(app = app, onDismiss = { sheetFor = null })
     }
 }
 
+/**
+ * Starts a patch -- the same call Home's button makes.
+ *
+ * It used to demand a storage folder before it would do anything, take a persistable permission on
+ * it, and then offer a choice between an app and a file. Home did none of that, which is precisely
+ * why a patch begun there had nowhere to write and failed every time.
+ */
 @Composable
 fun AppManageFab(navigator: DestinationsNavigator) {
-    val context = LocalContext.current
-    val snackbarHost = LocalSnackbarHost.current
-    val scope = rememberCoroutineScope()
-    var shouldSelectDirectory by remember { mutableStateOf(false) }
-    var showNewPatchDialog by remember { mutableStateOf(false) }
-
-    val errorText = stringResource(R.string.patch_select_dir_error)
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        try {
-            if (it.resultCode == Activity.RESULT_CANCELED) return@rememberLauncherForActivityResult
-            val uri = it.data?.data ?: throw IOException("No data")
-            val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            context.contentResolver.takePersistableUriPermission(uri, takeFlags)
-            Configs.storageDirectory = uri.toString()
-            Log.i(TAG, "Storage directory: ${uri.path}")
-            showNewPatchDialog = true
-        } catch (e: Exception) {
-            Log.e(TAG, "Error when requesting saving directory", e)
-            scope.launch { snackbarHost.showSnackbar(errorText) }
-        }
+    FloatingActionButton(onClick = { startNewPatch(navigator) }) {
+        Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.add))
     }
-
-    if (shouldSelectDirectory) {
-        AlertDialog(
-            onDismissRequest = { shouldSelectDirectory = false },
-            confirmButton = {
-                TextButton(
-                    content = { Text(stringResource(android.R.string.ok)) },
-                    onClick = {
-                        launcher.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
-                        shouldSelectDirectory = false
-                    }
-                )
-            },
-            dismissButton = {
-                TextButton(
-                    content = { Text(stringResource(android.R.string.cancel)) },
-                    onClick = { shouldSelectDirectory = false }
-                )
-            },
-            title = {
-                Text(
-                    modifier = Modifier.fillMaxWidth(),
-                    text = stringResource(R.string.patch_select_dir_title),
-                    textAlign = TextAlign.Center
-                )
-            },
-            text = { Text(stringResource(R.string.patch_select_dir_text)) }
-        )
-    }
-
-    if (showNewPatchDialog) {
-        AlertDialog(
-            onDismissRequest = { showNewPatchDialog = false },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(
-                    content = { Text(stringResource(android.R.string.cancel)) },
-                    onClick = { showNewPatchDialog = false }
-                )
-            },
-            title = {
-                Text(
-                    modifier = Modifier.fillMaxWidth(),
-                    text = stringResource(R.string.screen_new_patch),
-                    textAlign = TextAlign.Center
-                )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    TextButton(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.secondary),
-                        onClick = {
-                            navigator.navigate(NewPatchScreenDestination(id = ACTION_STORAGE))
-                            showNewPatchDialog = false
-                        }
-                    ) {
-                        Text(
-                            modifier = Modifier.padding(vertical = 8.dp),
-                            text = stringResource(R.string.patch_from_storage),
-                            style = MaterialTheme.typography.bodyLarge
-                        )
-                    }
-                    TextButton(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.secondary),
-                        onClick = {
-                            navigator.navigate(NewPatchScreenDestination(id = ACTION_APPLIST))
-                            showNewPatchDialog = false
-                        }
-                    ) {
-                        Text(
-                            modifier = Modifier.padding(vertical = 8.dp),
-                            text = stringResource(R.string.patch_from_applist),
-                            style = MaterialTheme.typography.bodyLarge
-                        )
-                    }
-                }
-            }
-        )
-    }
-
-    FloatingActionButton(
-        content = { Icon(Icons.Filled.Add, stringResource(R.string.add)) },
-        onClick = {
-            val uri = Configs.storageDirectory?.toUri()
-            if (uri == null) {
-                shouldSelectDirectory = true
-            } else {
-                runCatching {
-                    val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                    context.contentResolver.takePersistableUriPermission(uri, takeFlags)
-                    if (DocumentFile.fromTreeUri(context, uri)?.exists() == false) throw IOException("Storage directory was deleted")
-                }.onSuccess {
-                    showNewPatchDialog = true
-                }.onFailure {
-                    Log.w(TAG, "Failed to take persistable permission for saved uri", it)
-                    Configs.storageDirectory = null
-                    shouldSelectDirectory = true
-                }
-            }
-        }
-    )
 }

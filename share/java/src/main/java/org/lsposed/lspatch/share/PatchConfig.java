@@ -8,6 +8,13 @@ public class PatchConfig {
     public final int sigBypassLevel;
     public final String originalSignature;
     public final String appComponentFactory;
+    /**
+     * Whether the loader dex was injected straight into the host package rather than kept as an
+     * asset. Recorded so a re-patch driven from an installed app can reproduce the choice; older
+     * patched apps have no such key, and Gson leaves the primitive {@code false} for them -- which
+     * is exactly what those apps were built with.
+     */
+    public final boolean injectDex;
     public final LSPConfig lspConfig;
 
     public PatchConfig(
@@ -16,7 +23,8 @@ public class PatchConfig {
             boolean overrideVersionCode,
             int sigBypassLevel,
             String originalSignature,
-            String appComponentFactory
+            String appComponentFactory,
+            boolean injectDex
     ) {
         this.useManager = useManager;
         this.debuggable = debuggable;
@@ -24,6 +32,7 @@ public class PatchConfig {
         this.sigBypassLevel = sigBypassLevel;
         this.originalSignature = originalSignature;
         this.appComponentFactory = appComponentFactory;
+        this.injectDex = injectDex;
         this.lspConfig = LSPConfig.instance;
     }
 }

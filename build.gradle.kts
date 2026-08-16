@@ -32,20 +32,28 @@ val commitCount = run {
     Git(repo).log().add(head).call().count()
 }
 
-val (coreCommitCount, coreLatestTag) = FileRepositoryBuilder().setGitDir(rootProject.file(".git/modules/core"))
+val (coreCommitCount, coreLatestTag, coreCommitHash) = FileRepositoryBuilder()
+    // Resolve the core's real git dir from its worktree rather than assuming `.git/modules/core`:
+    // when the submodule is checked out as a full clone (its own `core/.git` directory), the modules
+    // copy is stale — wrong HEAD, no tags — and would drop us to the "1.0" fallback. findGitDir
+    // follows a gitdir-file too, so a fresh submodule clone still resolves correctly.
+    .setWorkTree(rootProject.file("core"))
+    .findGitDir()
     .runCatching {
         build().use { repo ->
             val git = Git(repo)
+            val head = repo.refDatabase.exactRef("HEAD").objectId
             val coreCommitCount =
                 git.log()
-                    .add(repo.refDatabase.exactRef("HEAD").objectId)
+                    .add(head)
                     .call().count() + 4200
             val ver = git.describe()
                 .setTags(true)
                 .setAbbrev(0).call().removePrefix("v")
-            coreCommitCount to ver
+            // The exact Vector commit the core was built from, so the manager can link to it.
+            Triple(coreCommitCount, ver, head.name)
         }
-    }.getOrNull() ?: (1 to "1.0")
+    }.getOrNull() ?: Triple(1, "1.0", "")
 
 // sync from https://github.com/JingMatrix/LSPosed/blob/master/build.gradle.kts
 val defaultManagerPackageName by extra("org.lsposed.lspatch")
@@ -54,6 +62,7 @@ val verCode by extra(commitCount)
 val verName by extra("0.8")
 val coreVerCode by extra(coreCommitCount)
 val coreVerName by extra(coreLatestTag)
+val coreVerHash by extra(coreCommitHash)
 val androidMinSdkVersion by extra(28)
 val androidTargetSdkVersion by extra(36)
 val androidCompileSdkVersion by extra(37)

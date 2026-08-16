@@ -3,6 +3,7 @@ val verCode: Int by rootProject.extra
 val verName: String by rootProject.extra
 val coreVerCode: Int by rootProject.extra
 val coreVerName: String by rootProject.extra
+val coreVerHash: String by rootProject.extra
 val androidSourceCompatibility: JavaVersion by rootProject.extra
 val androidTargetCompatibility: JavaVersion by rootProject.extra
 
@@ -21,7 +22,8 @@ val generateTask = task<Copy>("generateJava") {
         "verCode" to verCode,
         "verName" to verName,
         "coreVerCode" to coreVerCode,
-        "coreVerName" to coreVerName
+        "coreVerName" to coreVerName,
+        "coreVerHash" to coreVerHash
     )
     inputs.properties(template)
     from("src/template/java")

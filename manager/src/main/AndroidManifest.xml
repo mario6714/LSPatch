@@ -6,6 +6,15 @@
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <!-- Module Store fetches the LSPosed modules.json catalog. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Continuous log monitoring runs as a foreground service so the process (which holds the
+         Shizuku binding) is not reaped in the background. Log collection maps to no standard
+         foreground-service bucket, so it declares the "special use" type. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".LSPApplication"
@@ -36,6 +45,15 @@
         <service
             android:name=".manager.ModuleService"
             android:exported="true" />
+
+        <service
+            android:name=".service.LogCollectorService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="continuous log monitoring for patched apps and the Xposed framework" />
+        </service>
 
         <provider
             android:name="rikka.shizuku.ShizukuProvider"

@@ -1,115 +1,136 @@
 package org.lsposed.lspatch.ui.viewmodel
 
-import android.util.Log
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.toMutableStateList
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
-import org.lsposed.lspatch.Patcher
-import org.lsposed.lspatch.share.PatchConfig
+import org.lsposed.lspatch.data.model.ModuleBinding
+import org.lsposed.lspatch.data.model.ModuleRef
+import org.lsposed.lspatch.data.model.PatchMode
+import org.lsposed.lspatch.data.model.PatchRequest
+import org.lsposed.lspatch.data.repository.PatchRequestStore
 import org.lsposed.lspatch.util.LSPPackageManager
-import org.lsposed.lspatch.util.LSPPackageManager.AppInfo
-import org.lsposed.patch.util.Logger
+import java.io.File
 
-class NewPatchViewModel : ViewModel() {
+/**
+ * The patch being configured.
+ *
+ * Loaded from a persisted [PatchRequest] by token rather than handed in as navigation arguments, so
+ * the screen comes back intact after the process is killed instead of landing on an uninitialised
+ * `lateinit`. Nothing here runs the patch: that belongs to `PatchJobHost`, which outlives the
+ * screen.
+ */
+class NewPatchViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
 
-    companion object {
-        private const val TAG = "NewPatchViewModel"
-    }
+    private val token: String = savedStateHandle["token"] ?: ""
 
-    enum class PatchState {
-        INIT, SELECTING, CONFIGURING, PATCHING, FINISHED, ERROR
-    }
-
-    sealed class ViewAction {
-        object DoneInit : ViewAction()
-        data class ConfigurePatch(val app: AppInfo) : ViewAction()
-        object SubmitPatch : ViewAction()
-        object LaunchPatch : ViewAction()
-    }
-
-    var patchState by mutableStateOf(PatchState.INIT)
+    var request by mutableStateOf<PatchRequest?>(null)
         private set
 
-    var useManager by mutableStateOf(true)
-    var debuggable by mutableStateOf(false)
-    var overrideVersionCode by mutableStateOf(false)
-    var sigBypassLevel by mutableStateOf(2)
-    var injectDex by mutableStateOf(false)
-    var embeddedModules = emptyList<AppInfo>()
-
-    lateinit var patchApp: AppInfo
-        private set
-    lateinit var patchOptions: Patcher.Options
+    var loading by mutableStateOf(true)
         private set
 
-    val logs = mutableStateListOf<Pair<Int, String>>()
-    private val logger = object : Logger() {
-        override fun d(msg: String) {
-            if (verbose) {
-                Log.d(TAG, msg)
-                logs += Log.DEBUG to msg
-            }
-        }
+    /**
+     * The modules to embed, as full bindings so the list can be reviewed rather than counted.
+     *
+     * Kept whatever the mode is. Switching to Local used to clear it outright, which meant a user
+     * comparing the two modes lost their whole selection by looking at the other one; the request
+     * decides what is *used* ([PatchRequest.effectiveModules]) without destroying what was chosen.
+     */
+    val modules = mutableListOf<ModuleBinding>().toMutableStateList()
 
-        override fun i(msg: String) {
-            Log.i(TAG, msg)
-            logs += Log.INFO to msg
-        }
-
-        override fun e(msg: String) {
-            Log.e(TAG, msg)
-            logs += Log.ERROR to msg
-        }
-    }
-
-    fun dispatch(action: ViewAction) {
+    init {
         viewModelScope.launch {
-            when (action) {
-                is ViewAction.DoneInit -> doneInit()
-                is ViewAction.ConfigurePatch -> configurePatch(action.app)
-                is ViewAction.SubmitPatch -> submitPatch()
-                is ViewAction.LaunchPatch -> launchPatch()
-            }
+            val loaded = PatchRequestStore.get(token)
+            request = loaded
+            if (loaded != null) modules.addAll(bindingsFor(loaded.modules))
+            loading = false
         }
     }
 
-    private fun doneInit() {
-        patchState = PatchState.SELECTING
+    private suspend fun bindingsFor(refs: List<ModuleRef>): List<ModuleBinding> =
+        refs.mapNotNull { ref ->
+            val file = File(ref.apkPath)
+            LSPPackageManager.moduleBindingFromFile(file)?.copy(
+                packageName = ref.packageName,
+                origin = ref.origin,
+            ) ?: ModuleBinding(
+                packageName = ref.packageName,
+                label = ref.packageName,
+                versionName = null,
+                versionCode = 0L,
+                manifest = null,
+                icon = null,
+                apkPath = ref.apkPath.takeIf { file.exists() },
+                origin = ref.origin,
+            )
+        }
+
+    private fun mutate(block: (PatchRequest) -> PatchRequest) {
+        val current = request ?: return
+        val updated = block(current)
+        request = updated
+        // Persisted as it is edited, so the draft survives the process being killed mid-decision.
+        viewModelScope.launch { PatchRequestStore.update(updated) }
     }
 
-    private fun configurePatch(app: AppInfo) {
-        Log.d(TAG, "Configuring patch for ${app.app.packageName}")
-        patchApp = app
-        patchState = PatchState.CONFIGURING
+    fun setMode(mode: PatchMode) = mutate { it.copy(mode = mode) }
+
+    fun setDebuggable(value: Boolean) = mutate { it.copy(debuggable = value) }
+
+    fun setOverrideVersionCode(value: Boolean) = mutate { it.copy(overrideVersionCode = value) }
+
+    fun setInjectDex(value: Boolean) = mutate { it.copy(injectDex = value) }
+
+    fun setSigBypassLevel(level: Int) = mutate { it.copy(sigBypassLevel = level) }
+
+    fun setLabelOverride(label: String) =
+        mutate { it.copy(labelOverride = label.ifBlank { null }) }
+
+    fun setExtractNativeLibs(value: Boolean) = mutate { it.copy(extractNativeLibs = value) }
+
+    fun setUsesCleartextTraffic(value: Boolean) = mutate { it.copy(usesCleartextTraffic = value) }
+
+    /**
+     * Adds modules to the set, keeping what is already there.
+     *
+     * Additive and de-duplicated by package. The old picker assigned its result over the previous
+     * selection, so embedding a second module silently discarded the first -- and the patcher keys
+     * every embedded module by its package name, so two apks for one package could not both be
+     * carried anyway.
+     */
+    fun addModules(added: List<ModuleBinding>) {
+        val existing = modules.mapTo(mutableSetOf()) { it.packageName }
+        val fresh = added.filter { existing.add(it.packageName) }
+        if (fresh.isEmpty()) return
+        modules.addAll(fresh)
+        syncModules()
     }
 
-    private fun submitPatch() {
-        Log.d(TAG, "Submit patch")
-        if (useManager) embeddedModules = emptyList()
-        patchOptions = Patcher.Options(
-            injectDex = injectDex,
-            config = PatchConfig(useManager, debuggable, overrideVersionCode, sigBypassLevel, null, null),
-            apkPaths = listOf(patchApp.app.sourceDir) + (patchApp.app.splitSourceDirs ?: emptyArray()),
-            embeddedModules = embeddedModules.flatMap { listOf(it.app.sourceDir) + (it.app.splitSourceDirs ?: emptyArray()) }
-        )
-        patchState = PatchState.PATCHING
+    fun removeModule(packageName: String) {
+        if (modules.removeAll { it.packageName == packageName }) syncModules()
     }
 
-    private suspend fun launchPatch() {
-        logger.i("Launch patch")
-        patchState = try {
-            Patcher.patch(logger, patchOptions)
-            PatchState.FINISHED
-        } catch (t: Throwable) {
-            logger.e(t.message.orEmpty())
-            logger.e(t.stackTraceToString())
-            PatchState.ERROR
-        } finally {
-            LSPPackageManager.cleanTmpApkDir()
+    private fun syncModules() {
+        mutate { current ->
+            current.copy(
+                modules = modules.mapNotNull { binding ->
+                    binding.apkPath?.let { ModuleRef(binding.packageName, it, binding.origin) }
+                }
+            )
+        }
+    }
+
+    /** Adds installed modules chosen by package name in the module picker. */
+    fun addInstalled(packageNames: List<String>) {
+        viewModelScope.launch {
+            val installed = LSPPackageManager.installedModuleBindings()
+                .filter { it.packageName in packageNames }
+            addModules(installed)
         }
     }
 }

@@ -4,7 +4,10 @@ accompanist = "0.36.0"
 compose-destinations = "1.11.7"
 shizuku = "13.1.5"
 hiddenapi = "4.4.0"
-compose-bom = "2025.11.00"
+compose-bom = "2026.06.01"
+# material3 is pinned ahead of the BOM: the expressive navigation-suite API (PanelBar's
+# ShortNavigationBarItem/WideNavigationRailItem edit mode) is still internal in the BOM's material3.
+m3 = "1.5.0-alpha25"
 # Kept in step with the core submodule's Kotlin, whose modules LSPatch links against: AGP 9's
 # built-in compiler is pinned by this version, and it must be new enough to read core's 2.4.10 metadata.
 kotlin = "2.4.10"
@@ -28,7 +31,8 @@ androidx-compose-ui = { module = "androidx.compose.ui:ui" }
 androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
-androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
+androidx-compose-material3 = { module = "androidx.compose.material3:material3", version.ref = "m3" }
+androidx-compose-material3-adaptive-navigation-suite = { module = "androidx.compose.material3:material3-adaptive-navigation-suite", version.ref = "m3" }
 
 androidx-navigation-compose = "androidx.navigation:navigation-compose:2.9.3"
 

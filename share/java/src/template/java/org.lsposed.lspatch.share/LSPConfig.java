@@ -9,6 +9,7 @@ public class LSPConfig {
     public String VERSION_NAME;
     public int CORE_VERSION_CODE;
     public String CORE_VERSION_NAME;
+    public String CORE_VERSION_HASH;
 
     private LSPConfig() {
     }
@@ -20,5 +21,6 @@ public class LSPConfig {
         instance.VERSION_NAME = "${verName}";
         instance.CORE_VERSION_CODE = ${coreVerCode};
         instance.CORE_VERSION_NAME = "${coreVerName}";
+        instance.CORE_VERSION_HASH = "${coreVerHash}";
     }
 }

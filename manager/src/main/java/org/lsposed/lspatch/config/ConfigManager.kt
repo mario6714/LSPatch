@@ -3,14 +3,19 @@ package org.lsposed.lspatch.config
 import android.content.pm.PackageManager
 import android.util.Log
 import androidx.room.Room
+import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import org.lsposed.lspatch.database.LSPDatabase
 import org.lsposed.lspatch.database.entity.Module
 import org.lsposed.lspatch.database.entity.Scope
 import org.lsposed.lspatch.lspApp
 import org.lsposed.lspatch.manager.ManagerRemoteServices
+import org.lsposed.lspatch.util.LSPPackageManager
 import org.lsposed.lspatch.util.ModuleLoader
 import org.matrix.vector.ipc.LoadedModule
 import java.io.File
@@ -32,15 +37,21 @@ object ConfigManager {
     suspend fun updateModules(newModules: Map<String, String>) =
         withContext(dispatcher) {
             for (module in moduleDao.getAll()) {
-                val apkPath = newModules[module.pkgName]
-                if (apkPath == null) {
-                    moduleDao.delete(module)
-                } else if (module.apkPath != apkPath) {
-                    module.apkPath = apkPath
-                }
+                if (newModules.containsKey(module.pkgName)) continue
+                // Absent from the scan does not mean uninstalled: isModuleApk returns false on any
+                // transient ZipFile read failure, and deleting the row here cascades away every app's
+                // scope that points at it. Delete only when the package is genuinely gone.
+                val stillInstalled = runCatching {
+                    lspApp.packageManager.getApplicationInfo(module.pkgName, 0)
+                }.isSuccess
+                if (!stillInstalled) moduleDao.delete(module)
             }
             for ((pkgName, apkPath) in newModules) {
+                // insert-if-absent then update the path in place. A REPLACE-based upsert would
+                // delete-and-reinsert the row, cascading away every scope row that points at it --
+                // which is exactly how enabled modules were being lost on restart.
                 moduleDao.insert(Module(pkgName, apkPath))
+                moduleDao.updatePath(pkgName, apkPath)
             }
         }
 
@@ -52,6 +63,58 @@ object ConfigManager {
     suspend fun deactivateModule(pkgName: String, module: Module) =
         withContext(dispatcher) {
             scopeDao.delete(Scope(appPkgName = pkgName, modulePkgName = module.pkgName))
+        }
+
+    /**
+     * Counts up whenever any app's module scope changes.
+     *
+     * The scope lives in the database, which nothing observes; without a signal, editing an app's
+     * modules on one screen left the other screen showing the set from before the edit until the
+     * manager was restarted.
+     */
+    private val _scopeRevision = MutableStateFlow(0)
+    val scopeRevision: StateFlow<Int> = _scopeRevision.asStateFlow()
+
+    /**
+     * Makes [modules] the complete set of modules enabled for [appPkgName], in one transaction.
+     *
+     * All of it or none of it: a half-applied scope is a patched app running a module combination
+     * the user never chose. The parent [Module] row is ensured for every target first, because the
+     * scope table has a foreign key onto it and inserting a scope row alone fails for a module the
+     * manager has not catalogued yet.
+     */
+    suspend fun setScopeForApp(appPkgName: String, modules: Set<String>): Result<Unit> =
+        withContext(dispatcher) {
+            runCatching {
+                db.withTransaction {
+                    val before = scopeDao.getModulesForApp(appPkgName).map { it.pkgName }.toSet()
+                    (before - modules).forEach {
+                        scopeDao.delete(Scope(appPkgName = appPkgName, modulePkgName = it))
+                    }
+                    (modules - before).forEach { pkg ->
+                        val apkPath = runCatching {
+                            lspApp.packageManager.getApplicationInfo(pkg, 0).sourceDir
+                        }.getOrNull() ?: return@forEach
+                        moduleDao.insert(Module(pkg, apkPath))
+                        moduleDao.updatePath(pkg, apkPath)
+                        scopeDao.insert(Scope(appPkgName = appPkgName, modulePkgName = pkg))
+                    }
+                }
+                LSPPackageManager.invalidateModuleIcons(appPkgName)
+                _scopeRevision.value++
+                Unit
+            }
+        }
+
+    /** Drops every module binding for [appPkgName] -- used when its patch is removed entirely. */
+    suspend fun clearScopeForApp(appPkgName: String) =
+        withContext(dispatcher) {
+            runCatching {
+                scopeDao.deleteForApp(appPkgName)
+                LSPPackageManager.invalidateModuleIcons(appPkgName)
+                _scopeRevision.value++
+            }
+            Unit
         }
 
     suspend fun getModulesForApp(pkgName: String): List<Module> =

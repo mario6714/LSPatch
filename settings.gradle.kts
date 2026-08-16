@@ -44,5 +44,6 @@ includeBuild("core") {
         substitute(module("vector:legacy")).using(project(":legacy"))
         substitute(module("vector:daemon-service")).using(project(":services:daemon-service"))
         substitute(module("vector:stubs")).using(project(":hiddenapi:stubs"))
+        substitute(module("vector:manager-ui")).using(project(":manager-ui"))
     }
 }

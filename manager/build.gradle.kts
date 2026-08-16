@@ -48,6 +48,14 @@ android {
     namespace = "org.lsposed.lspatch"
 }
 
+// Pinned, not inferred. compose-destinations otherwise derives the generated package from the
+// longest common prefix of every @Destination composable, so adding one destination outside
+// ui.page would silently move NavGraphs and ui.page.destinations.* up a level and break every
+// import that names them.
+ksp {
+    arg("compose-destinations.codeGenPackageName", "org.lsposed.lspatch.ui.page")
+}
+
 afterEvaluate {
     android.applicationVariants.forEach { variant ->
         val variantLowered = variant.name.lowercase()
@@ -74,6 +82,7 @@ afterEvaluate {
 dependencies {
     implementation(projects.patch)
     implementation("vector:daemon-service")
+    implementation("vector:manager-ui")
     implementation(projects.share.android)
     implementation(projects.share.java)
     implementation(platform(lspatch.androidx.compose.bom))
@@ -86,6 +95,7 @@ dependencies {
     implementation(lspatch.androidx.activity.compose)
     implementation(lspatch.androidx.compose.material.icons.extended)
     implementation(lspatch.androidx.compose.material3)
+    implementation(lspatch.androidx.compose.material3.adaptive.navigation.suite)
     implementation(lspatch.androidx.compose.ui)
     implementation(lspatch.androidx.compose.ui.tooling.preview)
     implementation(lspatch.androidx.core.ktx)

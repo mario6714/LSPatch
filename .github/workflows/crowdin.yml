@@ -5,7 +5,10 @@ on:
   push:
     branches: [ master ]
     paths:
+    # Source strings only (the *-values folder, not translated *-values-xx ones). The shared UI
+    # strings live in the core submodule and sync from its own workflow, so they are not listed here.
     - manager/src/main/res/values/strings.xml
+    - manager/src/main/res/values/strings_logservice.xml
 
 jobs:
   synchronize-with-crowdin:

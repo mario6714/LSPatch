@@ -89,6 +89,10 @@ object ShizukuApi {
             .daemon(false)
             .processNameSuffix("service")
             .debuggable(true)
+            // Version the service by the app's version code: on an upgrade Shizuku tears down the old
+            // instance and starts a fresh one, so a rebuilt ShizukuService (new AIDL, new collector)
+            // actually takes effect instead of the app binding to a stale cached process.
+            .version(org.lsposed.lspatch.share.LSPConfig.instance.VERSION_CODE)
 
         try {
             Shizuku.bindUserService(args, userServiceConnection)
@@ -115,6 +119,71 @@ object ShizukuApi {
 
     fun uninstallPackage(packageName: String, intentSender: IntentSender) {
         packageInstaller.uninstall(packageName, intentSender)
+    }
+
+    /** Runs a shell command through the Shizuku user service (shell UID); null if unavailable. */
+    suspend fun runShellCommand(command: String): String? {
+        val service = userService ?: withTimeoutOrNull(3000) { userServiceDeferred.await() } ?: return null
+        return try {
+            service.runShellCommand(command)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** The user service, awaiting the binding for up to 3s; null if Shizuku is not available. */
+    private suspend fun awaitService(): IShizukuService? =
+        userService ?: withTimeoutOrNull(3000) { userServiceDeferred.await() }
+
+    // --- Continuous log collection (see [ShizukuService]). The shell UID owns the rotating part
+    // files; the app reads them back through these wrappers rather than the filesystem. ---
+
+    /** Starts the fan-out log collector; [relevantUids] select the framework stream. */
+    suspend fun startLogCollector(logDir: String, relevantUids: IntArray): Boolean {
+        val service = awaitService() ?: return false
+        return try {
+            service.startLogCollector(logDir, relevantUids)
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** Runs a shell script (`sh -c`) — globs/loops/redirects allowed; null if unavailable. */
+    suspend fun runShellScript(script: String): String? {
+        val service = awaitService() ?: return null
+        return runCatching { service.runShellScript(script) }.getOrNull()
+    }
+
+    suspend fun stopLogCollector() {
+        awaitService()?.let { runCatching { it.stopLogCollector() } }
+    }
+
+    /** Rolls both streams to a fresh part without stopping collection or deleting anything. */
+    suspend fun startNewLogPart(): Boolean {
+        val service = awaitService() ?: return false
+        return runCatching { service.startNewLogPart() }.getOrDefault(false)
+    }
+
+    suspend fun isLogCollectorRunning(): Boolean {
+        val service = awaitService() ?: return false
+        return runCatching { service.isLogCollectorRunning() }.getOrDefault(false)
+    }
+
+    /** One stream's parts as (absolutePath, sizeBytes), oldest first; empty when none/unavailable. */
+    suspend fun listLogParts(logDir: String, prefix: String): List<Pair<String, Long>> {
+        val service = awaitService() ?: return emptyList()
+        return runCatching {
+            service.listLogParts(logDir, prefix).mapNotNull { row ->
+                val parts = row.split('\t')
+                if (parts.size == 2) parts[0] to (parts[1].toLongOrNull() ?: 0L) else null
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    /** Reads a collected part, keeping at most [maxChars] from its tail; null if unavailable. */
+    suspend fun readLogPart(path: String, maxChars: Int): String? {
+        val service = awaitService() ?: return null
+        return runCatching { service.readLogPart(path, maxChars) }.getOrNull()
     }
 
     suspend fun performDexOptMode(packageName: String): Boolean {
