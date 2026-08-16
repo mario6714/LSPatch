@@ -61,13 +61,15 @@ afterEvaluate {
         val variantLowered = variant.name.lowercase()
         val variantCapped = variant.name.replaceFirstChar { it.uppercase() }
 
-        tasks.register<Copy>("copy${variantCapped}Assets") {
-            dependsOn(":meta-loader:copy$variantCapped")
-            dependsOn(":patch-loader:copy$variantCapped")
-            tasks["merge${variantCapped}Assets"].dependsOn(this)
-
-            into("${layout.buildDirectory.get().asFile}/intermediates/assets/$variantLowered/merge${variantCapped}Assets")
-            from("${rootProject.projectDir}/out/assets/${variant.name}")
+        // The loader dex/so land in out/assets/<variant> (the assets srcDir above) from tasks in the
+        // sibling loader modules. Gradle cannot infer those producers from a shared directory, so the
+        // asset merge names them directly: a dependency routed through an aggregator lifecycle task
+        // carries no output and does not satisfy the input/output validation, which a parallel build
+        // (CI) turns into a hard error rather than a warning.
+        tasks.named("merge${variantCapped}Assets") {
+            dependsOn(":meta-loader:copyDex$variantCapped")
+            dependsOn(":patch-loader:copyDex$variantCapped")
+            dependsOn(":patch-loader:copySo$variantCapped")
         }
 
         tasks.register<Copy>("build$variantCapped") {
