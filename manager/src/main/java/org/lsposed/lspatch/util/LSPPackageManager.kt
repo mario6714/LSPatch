@@ -41,9 +41,23 @@ object LSPPackageManager {
     const val STATUS_USER_CANCELLED = -2
 
     @Parcelize
-    class AppInfo(val app: ApplicationInfo, val label: String) : Parcelable {
+    class AppInfo(val app: ApplicationInfo, val label: String, val isModule: Boolean = false) : Parcelable {
         val isXposedModule: Boolean
-            get() = app.metaData?.get("xposedminversion") != null
+            get() = isModule
+    }
+
+    // A module is either a legacy one (manifest xposedminversion / assets/xposed_init) or a modern
+    // one, marked only by META-INF/xposed/java_init.list. Only the APK scan sees the modern kind, so
+    // it is computed once at fetch time rather than in a property getter.
+    private fun isModuleApk(app: ApplicationInfo): Boolean {
+        if (app.metaData?.get("xposedminversion") != null) return true
+        val sourceDir = app.sourceDir ?: return false
+        return runCatching {
+            java.util.zip.ZipFile(sourceDir).use { zip ->
+                zip.getEntry("META-INF/xposed/java_init.list") != null ||
+                        zip.getEntry("assets/xposed_init") != null
+            }
+        }.getOrDefault(false)
     }
 
     var appList by mutableStateOf(listOf<AppInfo>())
@@ -59,7 +73,7 @@ object LSPPackageManager {
             val collection = mutableListOf<AppInfo>()
             pm.getInstalledApplications(PackageManager.GET_META_DATA).forEach {
                 val label = pm.getApplicationLabel(it)
-                collection.add(AppInfo(it, label.toString()))
+                collection.add(AppInfo(it, label.toString(), isModuleApk(it)))
                 appIcon[it.packageName] = iconLoader.loadIcon(it).asImageBitmap()
             }
             collection.sortWith(compareBy(Collator.getInstance(Locale.getDefault()), AppInfo::label))
@@ -181,7 +195,7 @@ object LSPPackageManager {
                         primary = appInfo
                     }
                     val label = lspApp.packageManager.getApplicationLabel(appInfo).toString()
-                    AppInfo(appInfo, label)
+                    AppInfo(appInfo, label, isModuleApk(appInfo))
                 }
                 // TODO: Check selected apks are from the same app
                 primary?.splitSourceDirs = splits.toTypedArray()

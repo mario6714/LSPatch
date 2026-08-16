@@ -8,12 +8,13 @@ val coreVerCode: Int by rootProject.extra
 val coreVerName: String by rootProject.extra
 
 plugins {
+    // Kotlin comes from AGP 9's built-in support; applying org.jetbrains.kotlin.android is an error
+    // since AGP 9.0. The compose / ksp / parcelize plugins still attach to that built-in Kotlin.
     alias(libs.plugins.agp.app)
     alias(lspatch.plugins.compose.compiler)
     alias(lspatch.plugins.google.devtools.ksp)
     alias(lspatch.plugins.rikka.tools.refine)
-    alias(lspatch.plugins.kotlin.android)
-    id("kotlin-parcelize")
+    id("org.jetbrains.kotlin.plugin.parcelize")
 }
 
 android {
@@ -44,19 +45,7 @@ android {
         buildConfig = true
     }
 
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.13"
-    }
-
     namespace = "org.lsposed.lspatch"
-
-    applicationVariants.all {
-        kotlin.sourceSets {
-            getByName(name) {
-                kotlin.srcDir("build/generated/ksp/$name/kotlin")
-            }
-        }
-    }
 }
 
 afterEvaluate {
@@ -64,16 +53,16 @@ afterEvaluate {
         val variantLowered = variant.name.lowercase()
         val variantCapped = variant.name.replaceFirstChar { it.uppercase() }
 
-        task<Copy>("copy${variantCapped}Assets") {
+        tasks.register<Copy>("copy${variantCapped}Assets") {
             dependsOn(":meta-loader:copy$variantCapped")
             dependsOn(":patch-loader:copy$variantCapped")
             tasks["merge${variantCapped}Assets"].dependsOn(this)
 
-            into("$buildDir/intermediates/assets/$variantLowered/merge${variantCapped}Assets")
+            into("${layout.buildDirectory.get().asFile}/intermediates/assets/$variantLowered/merge${variantCapped}Assets")
             from("${rootProject.projectDir}/out/assets/${variant.name}")
         }
 
-        task<Copy>("build$variantCapped") {
+        tasks.register<Copy>("build$variantCapped") {
             dependsOn(tasks["assemble$variantCapped"])
             from(variant.outputs.map { it.outputFile })
             into("${rootProject.projectDir}/out/$variantLowered")
@@ -102,20 +91,20 @@ dependencies {
     implementation(lspatch.androidx.core.ktx)
     implementation(lspatch.androidx.lifecycle.viewmodel.compose)
     implementation(lspatch.androidx.navigation.compose)
-    implementation(libs.androidx.preference)
+    implementation(lspatch.androidx.preference)
     implementation(lspatch.androidx.room.ktx)
     implementation(lspatch.androidx.room.runtime)
     implementation(lspatch.google.accompanist.navigation.animation)
     implementation(lspatch.google.accompanist.pager)
     implementation(lspatch.google.accompanist.swiperefresh)
-    implementation(libs.material)
+    implementation(lspatch.material)
     implementation(libs.gson)
     implementation(lspatch.rikka.shizuku.api)
     implementation(lspatch.rikka.shizuku.provider)
     implementation(lspatch.rikka.refine)
     implementation(lspatch.raamcosta.compose.destinations)
-    implementation(libs.appiconloader)
-    implementation(libs.hiddenapibypass)
+    implementation(lspatch.appiconloader)
+    implementation(lspatch.hiddenapibypass)
     ksp(lspatch.androidx.room.compiler)
     ksp(lspatch.raamcosta.compose.destinations.ksp)
 }

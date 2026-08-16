@@ -17,8 +17,9 @@ import android.util.Log;
 import android.widget.Toast;
 
 import org.lsposed.lspatch.share.Constants;
-import org.lsposed.lspd.models.Module;
-import org.lsposed.lspd.service.ILSPApplicationService;
+import org.matrix.vector.ipc.IFrameworkService;
+import org.matrix.vector.ipc.IProcessChannel;
+import org.matrix.vector.ipc.LoadedModule;
 
 import java.io.File;
 import java.lang.reflect.InvocationTargetException;
@@ -29,12 +30,16 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-public class RemoteApplicationService implements ILSPApplicationService {
+/**
+ * The {@link IFrameworkService} for manager mode: it binds the manager's service and forwards module
+ * queries to it, so the app is served whatever modules the manager has scoped to it.
+ */
+public class RemoteApplicationService implements IFrameworkService {
 
     private static final String TAG = "LSPatch";
     private static final String MODULE_SERVICE = Constants.MANAGER_PACKAGE_NAME + ".manager.ModuleService";
 
-    private volatile ILSPApplicationService service;
+    private volatile IFrameworkService service;
 
     @SuppressLint("DiscouragedPrivateApi")
     public RemoteApplicationService(Context context) throws RemoteException {
@@ -48,7 +53,7 @@ public class RemoteApplicationService implements ILSPApplicationService {
                 @Override
                 public void onServiceConnected(ComponentName name, IBinder binder) {
                     Log.i(TAG, "Manager binder received");
-                    service = Stub.asInterface(binder);
+                    service = IFrameworkService.Stub.asInterface(binder);
                     latch.countDown();
                 }
 
@@ -85,17 +90,17 @@ public class RemoteApplicationService implements ILSPApplicationService {
 
     @Override
     public boolean isLogMuted() throws RemoteException {
-        return false;
+        return service != null && service.isLogMuted();
     }
 
     @Override
-    public List<Module> getLegacyModulesList() throws RemoteException {
-        return service == null ? new ArrayList<>() : service.getLegacyModulesList();
+    public List<LoadedModule> getLegacyModules() throws RemoteException {
+        return service == null ? new ArrayList<>() : service.getLegacyModules();
     }
 
     @Override
-    public List<Module> getModulesList() throws RemoteException {
-        return service == null ? new ArrayList<>() : service.getModulesList();
+    public List<LoadedModule> getModules() throws RemoteException {
+        return service == null ? new ArrayList<>() : service.getModules();
     }
 
     @Override
@@ -104,12 +109,22 @@ public class RemoteApplicationService implements ILSPApplicationService {
     }
 
     @Override
-    public IBinder asBinder() {
-        return service == null ? null : service.asBinder();
+    public ParcelFileDescriptor openManagerApk() throws RemoteException {
+        return service == null ? null : service.openManagerApk();
     }
 
     @Override
-    public ParcelFileDescriptor requestInjectedManagerBinder(List<IBinder> binder) {
+    public IBinder requestManagerService() {
         return null;
+    }
+
+    @Override
+    public void attachProcessChannel(IProcessChannel channel) throws RemoteException {
+        if (service != null) service.attachProcessChannel(channel);
+    }
+
+    @Override
+    public IBinder asBinder() {
+        return service == null ? null : service.asBinder();
     }
 }

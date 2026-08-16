@@ -2,7 +2,8 @@ project(lspatch)
 cmake_minimum_required(VERSION 3.28)
 
 set(CMAKE_CXX_STANDARD 23)
-add_subdirectory(${CORE_ROOT} core)
+# Vector master ships the hook engine as the `native` static lib; it resolves core/external itself.
+add_subdirectory(${VECTOR_ROOT}/native native)
 
 aux_source_directory(src SRC_LIST)
 aux_source_directory(src/jni SRC_LIST)
@@ -13,7 +14,7 @@ add_library(${PROJECT_NAME} SHARED ${SRC_LIST})
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_include_directories(${PROJECT_NAME} PRIVATE src)
 
-target_link_libraries(${PROJECT_NAME} core log)
+target_link_libraries(${PROJECT_NAME} native log)
 
 if (DEFINED DEBUG_SYMBOLS_PATH)
     set(DEBUG_SYMBOLS_PATH ${DEBUG_SYMBOLS_PATH}/${API})

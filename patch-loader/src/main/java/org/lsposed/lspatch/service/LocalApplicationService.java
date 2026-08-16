@@ -1,17 +1,18 @@
 package org.lsposed.lspatch.service;
 
 import android.content.Context;
+import android.content.pm.ApplicationInfo;
 import android.os.Environment;
 import android.os.IBinder;
 import android.os.ParcelFileDescriptor;
-import android.os.RemoteException;
 import android.util.Log;
 
 import org.lsposed.lspatch.loader.util.FileUtils;
 import org.lsposed.lspatch.share.Constants;
 import org.lsposed.lspatch.util.ModuleLoader;
-import org.lsposed.lspd.models.Module;
-import org.lsposed.lspd.service.ILSPApplicationService;
+import org.matrix.vector.ipc.IFrameworkService;
+import org.matrix.vector.ipc.IProcessChannel;
+import org.matrix.vector.ipc.LoadedModule;
 
 import java.io.File;
 import java.io.IOException;
@@ -19,17 +20,31 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 import java.util.zip.ZipFile;
 
-public class LocalApplicationService extends ILSPApplicationService.Stub {
+/**
+ * The {@link IFrameworkService} for embedded (no-manager) mode: it serves the modules the patcher
+ * baked into the app's own assets under {@code lspatch/modules}.
+ */
+public class LocalApplicationService extends IFrameworkService.Stub {
 
     private static final String TAG = "LSPatch";
 
-    private final List<Module> modules = new ArrayList<>();
+    private final List<LoadedModule> modules = new ArrayList<>();
 
     public LocalApplicationService(Context context) {
+        String[] names;
         try {
-            for (var name : context.getAssets().list("lspatch/modules")) {
+            names = context.getAssets().list("lspatch/modules");
+        } catch (IOException e) {
+            Log.e(TAG, "Error when listing embedded modules", e);
+            return;
+        }
+        if (names == null) return;
+        for (var name : names) {
+            // One malformed module must not stop the others from loading.
+            try {
                 String packageName = name.substring(0, name.length() - 4);
                 String modulePath = context.getCacheDir() + "/lspatch/" + packageName + "/";
                 String cacheApkPath;
@@ -46,30 +61,51 @@ public class LocalApplicationService extends ILSPApplicationService.Stub {
                     }
                 }
 
-                var module = new Module();
-                module.apkPath = cacheApkPath;
+                var code = ModuleLoader.loadModule(cacheApkPath);
+                if (code == null) {
+                    Log.w(TAG, "Failed to load module " + packageName);
+                    continue;
+                }
+
+                var module = new LoadedModule();
                 module.packageName = packageName;
-                module.file = ModuleLoader.loadModule(cacheApkPath);
+                module.apkPath = cacheApkPath;
+                module.appId = -1;
+                module.versionCode = 0;
+                module.code = code;
+                module.applicationInfo = syntheticApplicationInfo(packageName, cacheApkPath);
+                module.service = new LocalModuleService();
                 modules.add(module);
+            } catch (Throwable e) {
+                Log.e(TAG, "Error loading embedded module " + name, e);
             }
-        } catch (IOException e) {
-            Log.e(TAG, "Error when initializing LocalApplicationServiceClient", e);
         }
     }
 
+    // The module is not installed as an app in embedded mode, so PackageManager cannot describe it.
+    // The framework only reads packageName and sourceDir off this (getModuleApplicationInfo, and the
+    // in-APK native library path), so a synthetic ApplicationInfo carrying those is enough.
+    private static ApplicationInfo syntheticApplicationInfo(String packageName, String apkPath) {
+        var info = new ApplicationInfo();
+        info.packageName = packageName;
+        info.sourceDir = apkPath;
+        info.publicSourceDir = apkPath;
+        return info;
+    }
+
     @Override
-    public boolean isLogMuted() throws RemoteException {
+    public boolean isLogMuted() {
         return false;
     }
 
     @Override
-    public List<Module> getLegacyModulesList() {
-        return modules;
+    public List<LoadedModule> getLegacyModules() {
+        return modules.stream().filter(m -> m.code.legacy).collect(Collectors.toList());
     }
 
     @Override
-    public List<Module> getModulesList() {
-        return new ArrayList<>();
+    public List<LoadedModule> getModules() {
+        return modules.stream().filter(m -> !m.code.legacy).collect(Collectors.toList());
     }
 
     @Override
@@ -78,12 +114,17 @@ public class LocalApplicationService extends ILSPApplicationService.Stub {
     }
 
     @Override
-    public ParcelFileDescriptor requestInjectedManagerBinder(List<IBinder> binder) {
+    public ParcelFileDescriptor openManagerApk() {
         return null;
     }
 
     @Override
-    public IBinder asBinder() {
-        return this;
+    public IBinder requestManagerService() {
+        return null;
+    }
+
+    @Override
+    public void attachProcessChannel(IProcessChannel channel) {
+        // LSPatch has no daemon to drive hot reload; the channel is accepted and ignored.
     }
 }

@@ -23,35 +23,32 @@
 
 #pragma once
 
+#include <map>
 #include <string>
-#include "config_bridge.h"
+
+#include "core/config_bridge.h"
 
 namespace lspd {
 
-    class ConfigImpl : public ConfigBridge {
-    public:
-        inline static void Init() {
-            instance_ = std::make_unique<ConfigImpl>();
-        }
+// LSPatch never obfuscates the framework. The JNI bridges fall back to their literal
+// org/matrix/vector/nativebridge/ names when a key is absent (see jni_bridge.h), but
+// resources_hook.cpp's GetXResourcesClassName() has no such fallback: it *requires* the
+// "android.content.res.XRes" key and refuses to hook resources without it. So the map carries that
+// one identity entry, which resolves back to android.content.res.XResources.
+class ConfigImpl : public vector::native::ConfigBridge {
+public:
+    inline static void Init() { instance_ = std::make_unique<ConfigImpl>(); }
 
-        virtual obfuscation_map_t& obfuscation_map() override {
-            return obfuscation_map_;
-        }
+    std::map<std::string, std::string>& obfuscation_map() override { return obfuscation_map_; }
 
-        virtual void obfuscation_map(obfuscation_map_t m) override {
-            obfuscation_map_ = std::move(m);
-        }
+    void obfuscation_map(std::map<std::string, std::string> m) override {
+        obfuscation_map_ = std::move(m);
+    }
 
-    private:
-        inline static std::map<std::string, std::string> obfuscation_map_ = {
-                {"de.robv.android.xposed.", "de.robv.android.xposed."},
-                { "android.app.AndroidApp", "android.app.AndroidApp"},
-                { "android.content.res.XRes", "android.content.res.XRes"},
-                { "android.content.res.XModule", "android.content.res.XModule"},
-                { "org.lsposed.lspd.core.", "org.lsposed.lspd.core."},
-                { "org.lsposed.lspd.nativebridge.", "org.lsposed.lspd.nativebridge."},
-                { "org.lsposed.lspd.service.", "org.lsposed.lspd.service."},
-        };
+private:
+    std::map<std::string, std::string> obfuscation_map_ = {
+        {"android.content.res.XRes", "android.content.res.XRes"},
     };
-}
+};
 
+}  // namespace lspd

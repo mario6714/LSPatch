@@ -17,9 +17,16 @@ import org.lsposed.lspatch.loader.util.FileUtils;
 import org.lsposed.lspatch.loader.util.XLog;
 import org.lsposed.lspatch.service.LocalApplicationService;
 import org.lsposed.lspatch.service.RemoteApplicationService;
-import org.lsposed.lspd.core.Startup;
-import org.lsposed.lspd.service.ILSPApplicationService;
+import org.matrix.vector.Startup;
+import org.matrix.vector.ipc.IFrameworkService;
+import org.matrix.vector.impl.VectorLifecycleManager;
+import org.matrix.vector.impl.di.LegacyFrameworkDelegate;
+import org.matrix.vector.impl.di.LegacyPackageInfo;
+import org.matrix.vector.impl.di.VectorBootstrap;
 import org.json.JSONObject;
+
+import de.robv.android.xposed.XposedBridge;
+import de.robv.android.xposed.XposedInit;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -76,7 +83,7 @@ public class LSPApplication {
         }
 
         Log.d(TAG, "Initialize service client");
-        ILSPApplicationService service;
+        IFrameworkService service;
         if (config.optBoolean("useManager")) {
             service = new RemoteApplicationService(context);
         } else {
@@ -84,18 +91,104 @@ public class LSPApplication {
         }
 
         disableProfile(context);
+
+        // patch_loader.cpp built the framework loader with a parent that already defines XResources'
+        // synthetic super, so XResources resolves cleanly. Publish that parent as Vector's
+        // dummyClassLoader so XposedBridge.initXResources() short-circuits instead of building its own
+        // device-Resources super and re-parenting the framework loader.
+        ClassLoader frameworkLoader = XposedBridge.class.getClassLoader();
+        if (frameworkLoader != null && frameworkLoader.getParent() != null) {
+            XposedBridge.dummyClassLoader = frameworkLoader.getParent();
+        }
+
         Startup.initXposed(false, ActivityThread.currentProcessName(), context.getApplicationInfo().dataDir, service);
-        Startup.bootstrapXposed();
+        Startup.bootstrapXposed(false);
         // WARN: Since it uses `XResource`, the following class should not be initialized
         // before forkPostCommon is invoke. Otherwise, you will get failure of XResources
         Log.i(TAG, "Load modules");
-        LSPLoader.initModules(appLoadedApk);
+        loadModulesAndDispatch();
         Log.i(TAG, "Modules initialized");
 
         switchAllClassLoader();
         SigBypass.doSigBypass(context, config.optInt("sigBypassLevel"));
 
         Log.i(TAG, "LSPatch bootstrap completed");
+    }
+
+    /**
+     * Replays the module lifecycle for the already-loaded target app.
+     *
+     * <p>Vector normally drives module loading from hooks it installs on {@code LoadedApk} during
+     * {@code bootstrapXposed}. But LSPatch has already built the app's {@code LoadedApk} by the time
+     * those hooks exist, so they never fire for the target package. This reproduces, for that one
+     * package, exactly what {@code LoadedApkHookers} would have done: instantiate the modern modules,
+     * then dispatch {@code onPackageLoaded}/{@code onPackageReady} to them and the legacy
+     * {@code handleLoadPackage} callbacks. {@code bootstrapXposed} has already loaded the legacy
+     * modules and registered their callbacks.</p>
+     */
+    private static void loadModulesAndDispatch() {
+        // Instantiate modern (libxposed) modules; guarded internally so the app-attach hook, were it
+        // ever to fire, cannot load a second generation on top.
+        try {
+            XposedInit.loadModules(activityThread);
+        } catch (Throwable t) {
+            Log.e(TAG, "Failed to load modern modules", t);
+        }
+
+        var appInfo = (ApplicationInfo) XposedHelpers.getObjectField(appLoadedApk, "mApplicationInfo");
+        ClassLoader classLoader;
+        try {
+            classLoader = appLoadedApk.getClassLoader();
+        } catch (Throwable t) {
+            Log.e(TAG, "Failed to obtain target class loader", t);
+            return;
+        }
+        Log.d(TAG, "Target class loader ready, dispatching lifecycle");
+        var defaultClassLoader = (ClassLoader) XposedHelpers.getObjectField(appLoadedApk, "mDefaultClassLoader");
+        if (defaultClassLoader == null) defaultClassLoader = classLoader;
+        var appComponentFactory = XposedHelpers.getObjectField(appLoadedApk, "mAppComponentFactory");
+        var resDir = (String) XposedHelpers.getObjectField(appLoadedApk, "mResDir");
+        var packageName = appInfo.packageName;
+
+        // The modern and legacy lifecycles are dispatched independently so a failure in one cannot
+        // stop the other, and neither can stop the rest of onLoad (class-loader switch, sig bypass).
+        try {
+            // Modern lifecycle: onPackageLoaded (API 29+) then onPackageReady (API 28+).
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                VectorLifecycleManager.INSTANCE.dispatchPackageLoaded(packageName, appInfo, true, defaultClassLoader);
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                VectorLifecycleManager.INSTANCE.dispatchPackageReady(
+                        packageName, appInfo, true, defaultClassLoader, classLoader, appComponentFactory);
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "Modern lifecycle dispatch failed", t);
+        }
+
+        // Legacy lifecycle. The resource-directory registration and the handleLoadPackage dispatch
+        // are guarded separately: registering the res dir loads XResources, whose runtime superclass
+        // may be unavailable, and that must not stop a module's method hooks from being installed.
+        LegacyFrameworkDelegate delegate = VectorBootstrap.INSTANCE.getDelegate();
+        if (delegate != null) {
+            try {
+                if (!delegate.isResourceHookingDisabled()) {
+                    delegate.setPackageNameForResDir(packageName, resDir);
+                }
+            } catch (Throwable t) {
+                // Resource hooking needs XResources, whose runtime superclass is provided by a dummy
+                // class loader inserted as the framework loader's parent. On this device that parent
+                // satisfies a plain loadClass, but not the superclass resolution ART performs while
+                // defining XResources, so XResources fails to link. Method hooking does not touch this
+                // path, so it is only warned about; see the project notes for the open investigation.
+                Log.w(TAG, "setPackageNameForResDir failed; legacy resource hooking is unavailable", t);
+            }
+            try {
+                delegate.onPackageLoaded(new LegacyPackageInfo(
+                        packageName, ActivityThread.currentProcessName(), classLoader, appInfo, true));
+            } catch (Throwable t) {
+                Log.e(TAG, "Legacy handleLoadPackage dispatch failed", t);
+            }
+        }
     }
 
     private static Context createLoadedApkWithContext() {
@@ -127,6 +220,11 @@ public class LSPApplication {
             appInfo.publicSourceDir = cacheApkPath.toString();
             if (config.has("appComponentFactory")) {
                 appInfo.appComponentFactory = config.optString("appComponentFactory");
+            } else {
+                // The original app declared no AppComponentFactory. The patched manifest points it
+                // at the metaloader stub, which the original apk does not contain, so clearing it
+                // keeps the class loader from being built against a class that cannot be found.
+                appInfo.appComponentFactory = null;
             }
 
             if (!Files.exists(cacheApkPath)) {
@@ -143,6 +241,10 @@ public class LSPApplication {
             mPackages.remove(appInfo.packageName);
             appLoadedApk = activityThread.getPackageInfoNoCheck(appInfo, compatInfo);
             XposedHelpers.setObjectField(mBoundApplication, "info", appLoadedApk);
+            // Build the class loader now, while bootstrapXposed has not yet installed the LoadedApk
+            // hooks. Otherwise the first getClassLoader() call during lifecycle dispatch triggers
+            // those hooks and dispatches onPackageReady a second time.
+            appLoadedApk.getClassLoader();
 
             var activityClientRecordClass = XposedHelpers.findClass("android.app.ActivityThread$ActivityClientRecord", ActivityThread.class.getClassLoader());
             var fixActivityClientRecord = (BiConsumer<Object, Object>) (k, v) -> {
@@ -199,7 +301,9 @@ public class LSPApplication {
             return;
         }
 
-        var profileDir = HiddenApiBridge.Environment_getDataProfilesDePackageDirectory(appInfo.uid / PER_USER_RANGE, pkgName);
+        // AOSP's Environment.getDataProfilesDePackageDirectory(userId, pkg); the HiddenApiBridge no
+        // longer exposes it, and the path has been stable for many releases.
+        var profileDir = new File("/data/misc/profiles/cur/" + (appInfo.uid / PER_USER_RANGE) + "/" + pkgName);
 
         var attrs = PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("r--------"));
 

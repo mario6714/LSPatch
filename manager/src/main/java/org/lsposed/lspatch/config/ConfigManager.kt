@@ -10,7 +10,9 @@ import org.lsposed.lspatch.database.LSPDatabase
 import org.lsposed.lspatch.database.entity.Module
 import org.lsposed.lspatch.database.entity.Scope
 import org.lsposed.lspatch.lspApp
+import org.lsposed.lspatch.manager.ManagerModuleService
 import org.lsposed.lspatch.util.ModuleLoader
+import org.matrix.vector.ipc.LoadedModule
 import java.io.File
 
 object ConfigManager {
@@ -27,7 +29,10 @@ object ConfigManager {
     private val moduleDao = db.moduleDao()
     private val scopeDao = db.scopeDao()
 
-    private val loadedModules = mutableMapOf<Module, org.lsposed.lspd.models.Module>()
+    // The framework consumes a module's preloaded dexes when it loads them (it maps and closes the
+    // SharedMemory), so a LoadedModule cannot be reused across processes. Each request therefore
+    // builds a fresh one rather than caching.
+    private val moduleServices = mutableMapOf<String, ManagerModuleService>()
 
     suspend fun updateModules(newModules: Map<String, String>) =
         withContext(dispatcher) {
@@ -35,10 +40,8 @@ object ConfigManager {
                 val apkPath = newModules[module.pkgName]
                 if (apkPath == null) {
                     moduleDao.delete(module)
-                    loadedModules.remove(module)
                 } else if (module.apkPath != apkPath) {
                     module.apkPath = apkPath
-                    loadedModules.remove(module)
                 }
             }
             for ((pkgName, apkPath) in newModules) {
@@ -61,12 +64,14 @@ object ConfigManager {
             return@withContext scopeDao.getModulesForApp(pkgName)
         }
 
-    suspend fun getModuleFilesForApp(pkgName: String): List<org.lsposed.lspd.models.Module> =
+    // The framework consumes a module's dexes when it loads them, so a fresh LoadedModule is built per
+    // request. `legacy` selects which half to build - a module of the other kind has its freshly mapped
+    // SharedMemory closed straight away rather than left for the finalizer.
+    suspend fun getModuleFilesForApp(pkgName: String, legacy: Boolean): List<LoadedModule> =
         withContext(dispatcher) {
             val modules = scopeDao.getModulesForApp(pkgName)
             return@withContext modules.mapNotNull {
                 if (!File(it.apkPath).exists()) {
-                    loadedModules.remove(it)
                     try {
                         it.apkPath = lspApp.packageManager.getApplicationInfo(it.pkgName, 0).sourceDir
                     } catch (e: PackageManager.NameNotFoundException) {
@@ -76,12 +81,27 @@ object ConfigManager {
                     }
                     Log.i(TAG, "Module apk path updated: ${it.pkgName}")
                 }
-                loadedModules.getOrPut(it) {
-                    org.lsposed.lspd.models.Module().apply {
-                        packageName = it.pkgName
-                        apkPath = it.apkPath
-                        file = ModuleLoader.loadModule(it.apkPath)
-                    }
+                val code = ModuleLoader.loadModule(it.apkPath) ?: return@mapNotNull null
+                if (code.legacy != legacy) {
+                    code.preLoadedDexes.forEach { dex -> runCatching { dex.close() } }
+                    return@mapNotNull null
+                }
+                val pm = lspApp.packageManager
+                val appInfo = try {
+                    pm.getApplicationInfo(it.pkgName, 0)
+                } catch (e: PackageManager.NameNotFoundException) {
+                    null
+                }
+                LoadedModule().apply {
+                    packageName = it.pkgName
+                    apkPath = it.apkPath
+                    this.code = code
+                    applicationInfo = appInfo
+                    appId = (appInfo?.uid ?: -1).let { uid -> if (uid < 0) -1 else uid % 100000 }
+                    versionCode = runCatching {
+                        pm.getPackageInfo(it.pkgName, 0).longVersionCode
+                    }.getOrDefault(0L)
+                    service = moduleServices.getOrPut(it.pkgName) { ManagerModuleService(it.pkgName) }
                 }
             }
         }

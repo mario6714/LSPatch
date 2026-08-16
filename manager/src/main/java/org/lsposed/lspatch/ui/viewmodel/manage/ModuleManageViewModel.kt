@@ -19,11 +19,14 @@ class ModuleManageViewModel : ViewModel() {
     )
 
     val appList: List<Pair<LSPPackageManager.AppInfo, XposedInfo>> by derivedStateOf {
-        LSPPackageManager.appList.mapNotNull { appInfo ->
-            val metaData = appInfo.app.metaData ?: return@mapNotNull null
+        LSPPackageManager.appList.filter { it.isXposedModule }.map { appInfo ->
+            val metaData = appInfo.app.metaData
+            // Legacy modules carry xposedminversion in the manifest; modern (API 102) ones do not,
+            // so fall back to the framework's own API level for display.
+            val api = metaData?.getInt("xposedminversion", -1)?.takeIf { it != -1 } ?: 102
             appInfo to XposedInfo(
-                metaData.getInt("xposedminversion", -1).also { if (it == -1) return@mapNotNull null },
-                metaData.getString("xposeddescription") ?: "",
+                api,
+                metaData?.getString("xposeddescription") ?: "",
                 emptyList() // TODO: scope
             )
         }.also {

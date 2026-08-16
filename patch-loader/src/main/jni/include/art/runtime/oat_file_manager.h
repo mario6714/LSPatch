@@ -20,9 +20,11 @@
 #ifndef LSPATCH_OAT_FILE_MANAGER_H
 #define LSPATCH_OAT_FILE_MANAGER_H
 
+#include <android/api-level.h>
+
 #include <vector>
 
-#include "context.h"
+#include "core/context.h"
 #include "utils/hook_helper.hpp"
 
 using namespace lsplant;
@@ -37,7 +39,7 @@ public:
             ->*[]<MemBackup auto backup>(
                    FileManager *thiz, const std::vector<const void *> &dex_files,
                    jobject class_loader, const char *class_loader_context) static -> void {
-        if (lspd::Context::GetInstance()->GetCurrentClassLoader() == nullptr) {
+        if (vector::native::Context::GetInstance()->GetCurrentClassLoader() == nullptr) {
             LOGD("Disabled background verification");
             return;
         }
@@ -51,7 +53,7 @@ public:
             ->*
         []<MemBackup auto backup>(FileManager *thiz, const std::vector<const void *> &dex_files,
                                   jobject class_loader) static -> void {
-        if (lspd::Context::GetInstance()->GetCurrentClassLoader() == nullptr) {
+        if (vector::native::Context::GetInstance()->GetCurrentClassLoader() == nullptr) {
             LOGD("Disabled background verification");
             return;
         }
@@ -60,7 +62,7 @@ public:
 
 public:
     static void DisableBackgroundVerification(const lsplant::HookHandler &handler) {
-        const int api_level = lspd::GetAndroidApiLevel();
+        const int api_level = android_get_device_api_level();
         if (api_level >= __ANDROID_API_Q__) {
             handler(RunBackgroundVerificationWithContext_);
             handler(RunBackgroundVerification_);

@@ -25,13 +25,15 @@
 
 #include "art/runtime/jit/profile_saver.h"
 #include "art/runtime/oat_file_manager.h"
-#include "elf_util.h"
+#include "core/native_api.h"
+#include "elf/elf_image.h"
+#include "elf/symbol_cache.h"
 #include "jni/bypass_sig.h"
-#include "native_util.h"
-#include "symbol_cache.h"
+#include "jni/resources_hook.h"
 #include "utils/jni_helper.hpp"
 
 using namespace lsplant;
+using namespace vector::native;
 
 namespace lspd {
 
@@ -66,8 +68,23 @@ void PatchLoader::LoadDex(JNIEnv* env, Context::PreloadedDex&& dex) {
                                     "(Ljava/nio/ByteBuffer;Ljava/lang/ClassLoader;)V");
     auto byte_buffer_class = JNI_FindClass(env, "java/nio/ByteBuffer");
     auto dex_buffer = env->NewDirectByteBuffer(dex.data(), dex.size());
+
+    // Give the framework loader a parent that already defines XResources' synthetic super
+    // (xposed.dummy.XResourcesSuperClass, extending android.content.res.Resources). LSPatch loads
+    // the framework into an already-running app, so there is no zygote window in which Vector could
+    // generate that super first; if XResources is resolved with its super unreachable, ART records
+    // the class as erroneous for the whole process and never retries. Installing the super loader as
+    // the parent at construction keeps the super reachable the first time XResources is resolved.
+    // The super is android.content.res.Resources: correct on stock Android; on ROMs whose Resources
+    // is a custom subclass XResources cannot stand in for it and resource replacement stays inactive.
+    ScopedLocalRef<jobject> super_loader{
+        env, vector::native::jni::BuildDummySuperClassLoader(
+                 env, stub_classloader.get(), "android.content.res.Resources",
+                 "android.content.res.TypedArray")};
+    jobject framework_parent = super_loader.get() ? super_loader.get() : stub_classloader.get();
+
     if (auto my_cl =
-            JNI_NewObject(env, in_memory_classloader, mid_init, dex_buffer, stub_classloader)) {
+            JNI_NewObject(env, in_memory_classloader, mid_init, dex_buffer, framework_parent)) {
         inject_class_loader_ = JNI_NewGlobalRef(env, my_cl);
     } else {
         LOGE("InMemoryDexClassLoader creation failed!!!");
@@ -90,14 +107,13 @@ void PatchLoader::InitHooks(JNIEnv* env) {
 }
 
 void PatchLoader::SetupEntryClass(JNIEnv* env) {
-    if (auto entry_class = FindClassFromLoader(env, GetCurrentClassLoader(),
-                                               "org.lsposed.lspatch.loader.LSPApplication")) {
+    if (auto entry_class =
+            FindClassFromCurrentLoader(env, "org.lsposed.lspatch.loader.LSPApplication")) {
         entry_class_ = JNI_NewGlobalRef(env, entry_class);
     }
 }
 
 void PatchLoader::Load(JNIEnv* env) {
-    /* InitSymbolCache(nullptr); */
     lsplant::InitInfo initInfo{
         .inline_hooker =
             [](auto t, auto r) {
@@ -105,23 +121,27 @@ void PatchLoader::Load(JNIEnv* env) {
                 return HookInline(t, r, &bk) == 0 ? bk : nullptr;
             },
         .inline_unhooker = [](auto t) { return UnhookInline(t) == 0; },
-        .art_symbol_resolver = [](auto symbol) { return GetArt()->getSymbAddress(symbol); },
+        .art_symbol_resolver =
+            [](auto symbol) { return ElfSymbolCache::GetArt()->getSymbAddress(symbol); },
         .art_symbol_prefix_resolver =
-            [](auto symbol) { return GetArt()->getSymbPrefixFirstAddress(symbol); },
+            [](auto symbol) { return ElfSymbolCache::GetArt()->getSymbPrefixFirstAddress(symbol); },
+        .generated_class_name = "LSPatch_",
+        .generated_source_name = "Dobby",
     };
 
     auto stub = JNI_FindClass(env, "org/lsposed/lspatch/metaloader/LSPAppComponentFactoryStub");
     auto dex_field = JNI_GetStaticFieldID(env, stub, "dex", "[B");
 
     ScopedLocalRef<jbyteArray> array = JNI_GetStaticObjectField(env, stub, dex_field);
-    auto dex = PreloadedDex{env->GetByteArrayElements(array.get(), nullptr),
-                            static_cast<size_t>(JNI_GetArrayLength(env, array))};
+    jbyte* dex_bytes = env->GetByteArrayElements(array.get(), nullptr);
+    auto dex = Context::PreloadedDex{dex_bytes, static_cast<size_t>(JNI_GetArrayLength(env, array))};
 
     InitArtHooker(env, initInfo);
+    // LoadDex builds an InMemoryDexClassLoader that copies the buffer synchronously, so the bytes are
+    // no longer needed once it returns; release them (JNI_ABORT: no copy-back of a read-only view).
     LoadDex(env, std::move(dex));
+    env->ReleaseByteArrayElements(array.get(), dex_bytes, JNI_ABORT);
     InitHooks(env);
-
-    GetArt(true);
 
     SetupEntryClass(env);
     FindAndCall(env, "onLoad", "()V");

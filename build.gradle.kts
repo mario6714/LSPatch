@@ -23,10 +23,13 @@ buildscript {
     }
 }
 
+// Count from the current HEAD, not a fixed remote branch: every commit -- on any branch, before it is
+// pushed -- bumps the version code, so a build made after a new commit is never mistaken for the one
+// before it (counting origin/master left branch builds sharing the master version code).
 val commitCount = run {
     val repo = FileRepository(rootProject.file(".git"))
-    val refId = repo.refDatabase.exactRef("refs/remotes/origin/master").objectId!!
-    Git(repo).log().add(refId).call().count()
+    val head = repo.resolve("HEAD")!!
+    Git(repo).log().add(head).call().count()
 }
 
 val (coreCommitCount, coreLatestTag) = FileRepositoryBuilder().setGitDir(rootProject.file(".git/modules/core"))
@@ -46,16 +49,16 @@ val (coreCommitCount, coreLatestTag) = FileRepositoryBuilder().setGitDir(rootPro
 
 // sync from https://github.com/JingMatrix/LSPosed/blob/master/build.gradle.kts
 val defaultManagerPackageName by extra("org.lsposed.lspatch")
-val apiCode by extra(93)
+val apiCode by extra(102)
 val verCode by extra(commitCount)
 val verName by extra("0.8")
 val coreVerCode by extra(coreCommitCount)
 val coreVerName by extra(coreLatestTag)
 val androidMinSdkVersion by extra(28)
 val androidTargetSdkVersion by extra(36)
-val androidCompileSdkVersion by extra(36)
+val androidCompileSdkVersion by extra(37)
 val androidCompileNdkVersion by extra("29.0.13113456")
-val androidBuildToolsVersion by extra("36.0.0")
+val androidBuildToolsVersion by extra("37.0.0")
 val androidSourceCompatibility by extra(JavaVersion.VERSION_21)
 val androidTargetCompatibility by extra(JavaVersion.VERSION_21)
 
@@ -66,8 +69,8 @@ tasks.register<Delete>("clean") {
 listOf("Debug", "Release").forEach { variant ->
     tasks.register("build$variant") {
         description = "Build LSPatch with $variant"
-        dependsOn(projects.jar.dependencyProject.tasks["build$variant"])
-        dependsOn(projects.manager.dependencyProject.tasks["build$variant"])
+        dependsOn(":jar:build$variant")
+        dependsOn(":manager:build$variant")
     }
 }
 
@@ -82,7 +85,7 @@ fun Project.configureBaseExtension() {
         buildToolsVersion = androidBuildToolsVersion
 
         externalNativeBuild.cmake {
-            version = "3.28.1+"
+            version = "3.29.8+"
             buildStagingDirectory = layout.buildDirectory.get().asFile
         }
 
@@ -104,8 +107,9 @@ fun Project.configureBaseExtension() {
 
             externalNativeBuild {
                 cmake {
-                    arguments += "-DEXTERNAL_ROOT=${File(rootDir.absolutePath, "core/external")}"
-                    arguments += "-DCORE_ROOT=${File(rootDir.absolutePath, "core/core/src/main/jni")}"
+                    // Vector master builds its hook engine as the `native` static lib under
+                    // core/native, resolving core/external via a single VECTOR_ROOT.
+                    arguments += "-DVECTOR_ROOT=${File(rootDir.absolutePath, "core")}"
                     abiFilters("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
                     val flags = arrayOf(
                         "-Wall",
@@ -120,13 +124,23 @@ fun Project.configureBaseExtension() {
                         "-Wno-builtin-macro-redefined",
                         "-Wno-unused-value",
                         "-D__FILE__=__FILE_NAME__",
+                        // parallel_hashmap's SSE2 group scan arrives twice on the x86 ABIs once
+                        // dex_builder is imported; phmap's layout depends on this flag, so it must
+                        // match core/native or the shared .so has an invisible ODR violation.
+                        "-DPHMAP_HAVE_SSE2=0",
+                        "-DPHMAP_HAVE_SSSE3=0",
+                        // core/native's config.h reads these as compiler defines, as Vector's own
+                        // build passes them; VERSION_NAME is a string literal.
+                        "-DVERSION_CODE=$verCode",
+                        "-DVERSION_NAME='\"$verName\"'",
                     )
-                    cppFlags("-std=c++20", *flags)
+                    cppFlags("-std=c++23", *flags)
                     cFlags("-std=c18", *flags)
                     arguments(
                         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-                        "-DVERSION_CODE=$verCode",
-                        "-DVERSION_NAME=$verName",
+                        // 16 KB page alignment for Android 15+ compatibility.
+                        "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384",
+                        "-DCMAKE_EXE_LINKER_FLAGS=-Wl,-z,max-page-size=16384",
                     )
                 }
             }
@@ -165,7 +179,7 @@ fun Project.configureBaseExtension() {
                             "-fno-asynchronous-unwind-tables",
                             "-flto=thin",
                             "-Wl,--thinlto-cache-policy,cache_size_bytes=300m",
-                            "-Wl,--thinlto-cache-dir=${buildDir.absolutePath}/.lto-cache",
+                            "-Wl,--thinlto-cache-dir=${layout.buildDirectory.get().asFile.absolutePath}/.lto-cache",
                         )
                         cppFlags.addAll(flags)
                         cFlags.addAll(flags)
@@ -179,7 +193,7 @@ fun Project.configureBaseExtension() {
                                 "-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=$configFlags",
                                 "-DCMAKE_C_FLAGS_RELEASE=$configFlags",
                                 "-DCMAKE_C_FLAGS_RELWITHDEBINFO=$configFlags",
-                                "-DDEBUG_SYMBOLS_PATH=${buildDir.absolutePath}/symbols",
+                                "-DDEBUG_SYMBOLS_PATH=${layout.buildDirectory.get().asFile.absolutePath}/symbols",
                             )
                         )
                     }
@@ -194,33 +208,33 @@ fun Project.configureBaseExtension() {
     }
 
     extensions.findByType(ApplicationAndroidComponentsExtension::class)?.let { androidComponents ->
-        val optimizeReleaseRes = task("optimizeReleaseRes").doLast {
-            val aapt2 = File(
-                androidComponents.sdkComponents.sdkDirectory.get().asFile,
-                "build-tools/${androidBuildToolsVersion}/aapt2"
-            )
-            val zip = java.nio.file.Paths.get(
-                project.buildDir.path,
-                "intermediates",
-                "optimized_processed_res",
-                "release",
-                "optimizeReleaseResources",
-                "resources-release-optimize.ap_"
-            )
-            val optimized = File("${zip}.opt")
-            val cmd = exec {
-                commandLine(
-                    aapt2, "optimize",
+        val optimizeReleaseRes = tasks.register("optimizeReleaseRes") {
+            doLast {
+                val aapt2 = File(
+                    androidComponents.sdkComponents.sdkDirectory.get().asFile,
+                    "build-tools/${androidBuildToolsVersion}/aapt2"
+                )
+                val zip = java.nio.file.Paths.get(
+                    project.layout.buildDirectory.get().asFile.path,
+                    "intermediates",
+                    "optimized_processed_res",
+                    "release",
+                    "optimizeReleaseResources",
+                    "resources-release-optimize.ap_"
+                )
+                val optimized = File("${zip}.opt")
+                val process = ProcessBuilder(
+                    aapt2.absolutePath, "optimize",
                     "--collapse-resource-names",
                     "--enable-sparse-encoding",
-                    "-o", optimized,
-                    zip
-                )
-                isIgnoreExitValue = false
-            }
-            if (cmd.exitValue == 0) {
-                delete(zip)
-                optimized.renameTo(zip.toFile())
+                    "-o", optimized.absolutePath,
+                    zip.toString()
+                ).redirectErrorStream(true).start()
+                process.inputStream.bufferedReader().readText().takeIf { it.isNotBlank() }?.let(::println)
+                if (process.waitFor() == 0) {
+                    java.nio.file.Files.deleteIfExists(zip)
+                    optimized.renameTo(zip.toFile())
+                }
             }
         }
 

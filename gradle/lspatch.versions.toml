@@ -5,7 +5,9 @@ compose-destinations = "1.11.7"
 shizuku = "13.1.5"
 hiddenapi = "4.4.0"
 compose-bom = "2025.11.00"
-kotlin = "2.2.21"
+# Kept in step with the core submodule's Kotlin, whose modules LSPatch links against: AGP 9's
+# built-in compiler is pinned by this version, and it must be new enough to read core's 2.4.10 metadata.
+kotlin = "2.4.10"
 ksp = "2.3.2"
 commons-io = "2.20.0"
 beust-jcommander = "1.82"
@@ -59,3 +61,8 @@ commons-io = { module = "commons-io:commons-io", version.ref = "commons-io" }
 beust-jcommander = { module = "com.beust:jcommander", version.ref = "beust-jcommander" }
 
 google-gson = { module = "com.google.code.gson:gson", version.ref = "google-gson" }
+
+hiddenapibypass = { module = "org.lsposed.hiddenapibypass:hiddenapibypass", version = "6.1" }
+appiconloader = { module = "me.zhanghai.android.appiconloader:appiconloader", version = "1.5.0" }
+material = { module = "com.google.android.material:material", version = "1.12.0" }
+androidx-preference = { module = "androidx.preference:preference", version = "1.2.1" }

@@ -23,13 +23,13 @@
 
 #pragma once
 
-#include "context.h"
+#include "core/context.h"
 
 namespace lspd {
 
     inline lsplant::InitInfo handler;
 
-    class PatchLoader : public Context {
+    class PatchLoader : public vector::native::Context {
     public:
         inline static void Init() {
             instance_ = std::make_unique<PatchLoader>();

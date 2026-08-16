@@ -4,15 +4,17 @@
 
 #include "bypass_sig.h"
 
-#include "../src/native_api.h"
-#include "elf_util.h"
-#include "logging.h"
-#include "native_util.h"
+#include "common/logging.h"
+#include "core/native_api.h"
+#include "elf/elf_image.h"
+#include "jni/jni_bridge.h"
 #include "patch_loader.h"
 #include "utils/hook_helper.hpp"
 #include "utils/jni_helper.hpp"
 
 using lsplant::operator""_sym;
+using namespace vector::native;
+using namespace vector::native::jni;
 
 namespace lspd {
 
@@ -21,12 +23,12 @@ std::string redirectPath;
 
 inline static constexpr auto kLibCName = "libc.so";
 
-std::unique_ptr<const SandHook::ElfImg> &GetC(bool release = false) {
-    static std::unique_ptr<const SandHook::ElfImg> kImg = nullptr;
+std::unique_ptr<const ElfImage> &GetC(bool release = false) {
+    static std::unique_ptr<const ElfImage> kImg = nullptr;
     if (release) {
         kImg.reset();
     } else if (!kImg) {
-        kImg = std::make_unique<SandHook::ElfImg>(kLibCName);
+        kImg = std::make_unique<ElfImage>(kLibCName);
     }
     return kImg;
 }
@@ -43,8 +45,8 @@ inline static auto __openat_ =
 
 bool HookOpenat(const lsplant::HookHandler &handler) { return handler(__openat_); }
 
-LSP_DEF_NATIVE_METHOD(void, SigBypass, enableOpenatHook, jstring origApkPath,
-                      jstring cacheApkPath) {
+VECTOR_DEF_NATIVE_METHOD(void, SigBypass, enableOpenatHook, jstring origApkPath,
+                         jstring cacheApkPath) {
     auto r = HookOpenat(lsplant::InitInfo{
         .inline_hooker =
             [](auto t, auto r) {
@@ -67,8 +69,8 @@ LSP_DEF_NATIVE_METHOD(void, SigBypass, enableOpenatHook, jstring origApkPath,
 }
 
 static JNINativeMethod gMethods[] = {
-    LSP_NATIVE_METHOD(SigBypass, enableOpenatHook, "(Ljava/lang/String;Ljava/lang/String;)V")};
+    VECTOR_NATIVE_METHOD(SigBypass, enableOpenatHook, "(Ljava/lang/String;Ljava/lang/String;)V")};
 
-void RegisterBypass(JNIEnv *env) { REGISTER_LSP_NATIVE_METHODS(SigBypass); }
+void RegisterBypass(JNIEnv *env) { REGISTER_VECTOR_NATIVE_METHODS(SigBypass); }
 
 }  // namespace lspd
