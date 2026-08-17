@@ -38,6 +38,7 @@ import org.matrix.vector.ui.navigation.FloatingPanelNav
 import org.matrix.vector.ui.navigation.NavPanels
 import org.matrix.vector.ui.navigation.PanelBar
 import org.matrix.vector.ui.navigation.PanelEditDone
+import org.matrix.vector.ui.navigation.TopLevelDestination
 import org.matrix.vector.ui.navigation.decodeNavPanels
 import org.matrix.vector.ui.navigation.encodeNavPanels
 import org.lsposed.lspatch.ui.appearance.LSPFloatingNavSettings
@@ -100,6 +101,25 @@ class MainActivity : ComponentActivity() {
                     val currentTop = currentDestination.toTopLevelRoute()
                     val atRoot = currentTop != null
 
+                    // One panel switch, shared by the bar and the floating navigation: everything
+                    // above the start destination is popped — its state saved, so a panel comes
+                    // back as it was left — and the chosen panel opens on top of it.
+                    fun openPanel(destination: TopLevelDestination) {
+                        val direction = destinationForKey(destination.key)
+                        navController.navigate(direction.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            // The panels are siblings of the start destination rather than nested
+                            // graphs, so that popUpTo files the stack it just saved under the start
+                            // destination's id as well as under the panel's own. Restoring when the
+                            // start destination is itself the target would therefore push the panel
+                            // just left straight back, and the trip home would go nowhere.
+                            restoreState = direction.route != NavGraphs.root.startAppDestination.route
+                        }
+                    }
+
                     val suiteState = rememberNavigationSuiteScaffoldState()
                     LaunchedEffect(atRoot) { if (atRoot) suiteState.show() else suiteState.hide() }
                     // Leaving a root screen also cancels an in-progress panel edit.
@@ -127,13 +147,7 @@ class MainActivity : ComponentActivity() {
                                     suiteType = suiteType,
                                     onSelect = { destination ->
                                         editing = false
-                                        navController.navigate(destinationForKey(destination.key).route) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
+                                        openPanel(destination)
                                     },
                                     onEdit = { editing = true },
                                     onToggleHidden = { key, hidden -> persist(panels.withHidden(key, hidden)) },
@@ -158,15 +172,7 @@ class MainActivity : ComponentActivity() {
                                 FloatingPanelNav(
                                     panels = panels,
                                     currentKey = currentTop?.key ?: panels.start.key,
-                                    onSelect = { destination ->
-                                        navController.navigate(destinationForKey(destination.key).route) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    },
+                                    onSelect = { destination -> openPanel(destination) },
                                     settings = LSPFloatingNavSettings,
                                 )
                             }
