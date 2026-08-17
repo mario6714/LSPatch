@@ -10,6 +10,13 @@ public class Constants {
 
     final static public String PATCH_FILE_SUFFIX = "-lspatched.apk";
     final static public String PROXY_APP_COMPONENT_FACTORY = "org.lsposed.lspatch.metaloader.LSPAppComponentFactoryStub";
+    /**
+     * The {@code DocumentsProvider} baked into the loader, and the suffix its authority is built
+     * from: {@code <packageName>.lspatch.documents}. Per-package so two patched apps never collide,
+     * and shared here so the patcher writes the same authority the provider is registered under.
+     */
+    final static public String DOCUMENTS_PROVIDER_CLASS = "org.lsposed.lspatch.loader.LSPatchDocumentsProvider";
+    final static public String DOCUMENTS_PROVIDER_AUTHORITY_SUFFIX = ".lspatch.documents";
     final static public String MANAGER_PACKAGE_NAME = "org.lsposed.lspatch";
     final static public int MIN_ROLLING_VERSION_CODE = 348;
 

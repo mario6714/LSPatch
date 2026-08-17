@@ -137,7 +137,54 @@ public class LSPApplication {
 
         switchAllClassLoader();
 
+        // Only after the app class loader exists, and before installContentProviders runs on return
+        // from makeApplication, so the injected DocumentsProvider is resolvable when the platform
+        // instantiates it.
+        if (config.optBoolean("injectDocumentsProvider")) {
+            bridgeDocumentsProviderClass();
+        }
+
         Log.i(TAG, "LSPatch bootstrap completed");
+    }
+
+    /** The loader class the app's class loader must be taught to resolve for issue #65. */
+    private static final String DOCUMENTS_PROVIDER_CLASS = "org.lsposed.lspatch.loader.LSPatchDocumentsProvider";
+
+    /**
+     * Makes the injected DocumentsProvider resolvable by the app's class loader.
+     *
+     * A manifest-declared component is instantiated by the platform from the app's class loader,
+     * which holds only the original apk and its splits; the provider class lives in the loader's own
+     * in-memory dex, which that loader never consults, so installContentProviders fails it at startup.
+     * The class cannot simply be grafted onto the app loader's dex path: ART binds an in-memory dex to
+     * the class-loader context it was defined under, so defining the class a second time elsewhere is
+     * rejected (the "ClassLoaderContext mismatch" the log shows).
+     *
+     * Instead, splice a filtering loader in front of the app loader as its parent. Standard delegation
+     * consults it on every lookup, but it answers with exactly one class -- the provider, loaded by the
+     * loader that already owns it -- and defers everything else to the app loader's real parent. The
+     * app's own classes are still found in its own dexes exactly as before; only the one class the app
+     * never had now resolves. The provider depends only on the framework, so nothing else is pulled in.
+     */
+    private static void bridgeDocumentsProviderClass() {
+        try {
+            ClassLoader appClassLoader = appLoadedApk.getClassLoader();
+            final ClassLoader loaderClassLoader = LSPApplication.class.getClassLoader();
+            ClassLoader realParent = appClassLoader.getParent();
+            ClassLoader bridge = new ClassLoader(realParent) {
+                @Override
+                protected Class<?> findClass(String name) throws ClassNotFoundException {
+                    if (DOCUMENTS_PROVIDER_CLASS.equals(name)) {
+                        return loaderClassLoader.loadClass(name);
+                    }
+                    throw new ClassNotFoundException(name);
+                }
+            };
+            XposedHelpers.setObjectField(appClassLoader, "parent", bridge);
+            Log.i(TAG, "Documents provider: bridged into the app class loader");
+        } catch (Throwable t) {
+            Log.e(TAG, "Failed to expose the documents provider to the app class loader", t);
+        }
     }
 
     /**

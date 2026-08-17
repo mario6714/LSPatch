@@ -75,6 +75,7 @@ suspend fun rePatchRequestFor(
         versionCodeOverride = config?.versionCode,
         // Recovered from the recorded config, not the original apks -- those never carried them.
         addedPermissions = config?.addedPermissions?.toList() ?: emptyList(),
+        injectDocumentsProvider = config?.injectDocumentsProvider ?: false,
         sigBypassLevel = config?.sigBypassLevel ?: 2,
         injectDex = config?.injectDex ?: false,
         modules = modules ?: embedded,

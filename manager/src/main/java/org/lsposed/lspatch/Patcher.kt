@@ -43,6 +43,7 @@ object Patcher {
                     .extractNativeLibs(if (extractNativeLibs) true else null)
                     .usesCleartextTraffic(if (usesCleartextTraffic) true else null)
                     .permissions(addedPermissions)
+                    .injectDocumentsProvider(injectDocumentsProvider)
                     .build()
             )
             .keystore(

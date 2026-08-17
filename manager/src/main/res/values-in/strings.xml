@@ -148,6 +148,8 @@
     <string name="patch_manifest_permissions_add">Tambah</string>
     <string name="patch_manifest_permissions_remove">Hapus</string>
     <string name="patch_manifest_permissions_count">%1$d ditambahkan</string>
+    <string name="patch_manifest_documents_provider">Ekspos data pribadi</string>
+    <string name="patch_manifest_documents_provider_desc">Menambahkan penyedia agar pengelola berkas bisa menjelajahi folder data pribadi aplikasi lewat pemilih berkas sistem, tanpa root. Memperluas apa yang bisa menjangkau data aplikasi — biarkan mati kecuali Anda memerlukannya.</string>
     <string name="patch_select_target">Pilih aplikasi untuk ditambal</string>
     <string name="patch_target_loading">Memuat aplikasi terpasang…</string>
     <string name="patch_target_already_patched">Sudah ditambal</string>

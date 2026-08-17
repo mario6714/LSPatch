@@ -148,6 +148,8 @@
     <string name="patch_manifest_permissions_add">הוסף</string>
     <string name="patch_manifest_permissions_remove">הסר</string>
     <string name="patch_manifest_permissions_count">%1$d נוספו</string>
+    <string name="patch_manifest_documents_provider">חשיפת נתונים פרטיים</string>
+    <string name="patch_manifest_documents_provider_desc">מוסיף ספק כדי שמנהל קבצים יוכל לעיין בתיקיית הנתונים הפרטיים של האפליקציה דרך בורר הקבצים של המערכת, בלי רוט. מרחיב את מה שיכול להגיע לנתוני האפליקציה — השאר כבוי אלא אם צריך.</string>
     <string name="patch_select_target">בחרו אפליקציה להחלת טלאי</string>
     <string name="patch_target_loading">טוען אפליקציות מותקנות…</string>
     <string name="patch_target_already_patched">כבר עבר טלאי</string>

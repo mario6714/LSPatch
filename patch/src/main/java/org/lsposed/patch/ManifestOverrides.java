@@ -59,6 +59,14 @@ public final class ManifestOverrides {
      */
     public final List<String> addedPermissions;
 
+    /**
+     * Whether to inject a {@code DocumentsProvider} that exposes the app's private data directory
+     * through the Storage Access Framework, so an external file manager can browse it without root.
+     * The provider class ships in the loader; this only decides whether the {@code <provider>} is
+     * declared. Off by default -- it widens the app's data-isolation surface.
+     */
+    public final boolean injectDocumentsProvider;
+
     private ManifestOverrides(Builder b) {
         this.versionCode = b.versionCode;
         this.label = b.label;
@@ -66,13 +74,14 @@ public final class ManifestOverrides {
         this.extractNativeLibs = b.extractNativeLibs;
         this.usesCleartextTraffic = b.usesCleartextTraffic;
         this.addedPermissions = Collections.unmodifiableList(new ArrayList<>(b.addedPermissions));
+        this.injectDocumentsProvider = b.injectDocumentsProvider;
     }
 
     /** True when nothing is overridden, so the patcher can skip the work entirely. */
     public boolean isEmpty() {
         return versionCode == null && label == null && targetSdkVersion == null
                 && extractNativeLibs == null && usesCleartextTraffic == null
-                && addedPermissions.isEmpty();
+                && addedPermissions.isEmpty() && !injectDocumentsProvider;
     }
 
     /**
@@ -111,6 +120,7 @@ public final class ManifestOverrides {
         // A set behind an ordered facade: duplicates a caller passes are collapsed here, while the
         // order the user added them in is what the report and the re-patch see.
         private final LinkedHashSet<String> addedPermissions = new LinkedHashSet<>();
+        private boolean injectDocumentsProvider;
 
         public Builder versionCode(Integer versionCode) {
             this.versionCode = versionCode;
@@ -149,6 +159,11 @@ public final class ManifestOverrides {
             if (permissions != null) {
                 permissions.forEach(this::addPermission);
             }
+            return this;
+        }
+
+        public Builder injectDocumentsProvider(boolean injectDocumentsProvider) {
+            this.injectDocumentsProvider = injectDocumentsProvider;
             return this;
         }
 

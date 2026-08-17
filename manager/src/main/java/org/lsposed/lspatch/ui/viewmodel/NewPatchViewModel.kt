@@ -112,6 +112,9 @@ class NewPatchViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
     fun removePermission(name: String) =
         mutate { it.copy(addedPermissions = it.addedPermissions - name) }
 
+    fun setInjectDocumentsProvider(value: Boolean) =
+        mutate { it.copy(injectDocumentsProvider = value) }
+
     /**
      * Adds modules to the set, keeping what is already there.
      *

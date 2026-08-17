@@ -343,6 +343,7 @@ fun NewPatchScreen(
                     onCleartext = viewModel::setUsesCleartextTraffic,
                     onAddPermission = viewModel::addPermission,
                     onRemovePermission = viewModel::removePermission,
+                    onInjectDocumentsProvider = viewModel::setInjectDocumentsProvider,
                 )
                 else -> Column(
                     Modifier
@@ -390,6 +391,7 @@ private fun ConfigureBody(
     onCleartext: (Boolean) -> Unit,
     onAddPermission: (String) -> Unit,
     onRemovePermission: (String) -> Unit,
+    onInjectDocumentsProvider: (Boolean) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val snackbarHost = LocalSnackbarHost.current
@@ -590,6 +592,15 @@ private fun ConfigureBody(
                     checked = request.usesCleartextTraffic,
                     onCheckedChange = onCleartext,
                 )
+                ToggleRow(
+                    title = stringResource(R.string.patch_manifest_documents_provider),
+                    icon = Icons.Rounded.FolderOpen,
+                    subtitle = stringResource(R.string.patch_manifest_documents_provider_desc),
+                    checked = request.injectDocumentsProvider,
+                    onCheckedChange = onInjectDocumentsProvider,
+                )
+                // Last of the manifest controls: its chip list and field are the tallest thing here,
+                // so it sits below the compact toggles rather than pushing them down the screen.
                 PermissionEditor(
                     added = request.addedPermissions,
                     onAdd = onAddPermission,
@@ -769,6 +780,9 @@ private fun advancedChips(request: PatchRequest): List<OptionChipData> = buildLi
                 Icons.Rounded.Key,
             )
         )
+    }
+    if (request.injectDocumentsProvider) {
+        add(OptionChipData(stringResource(R.string.patch_manifest_documents_provider), true, Icons.Rounded.FolderOpen))
     }
     if (!MyKeyStore.useDefault) {
         add(OptionChipData(stringResource(R.string.settings_keystore_custom), true, Icons.Outlined.Ballot))
