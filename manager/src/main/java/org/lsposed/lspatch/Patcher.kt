@@ -28,7 +28,6 @@ object Patcher {
             .outputDir(outputDir)
             .useManager(mode.useManager)
             .debuggable(debuggable)
-            .overrideVersionCode(overrideVersionCode)
             .sigBypassLevel(sigBypassLevel)
             .injectDex(injectDex)
             // The output directory is cleared before every run, so anything still there is a
@@ -38,6 +37,7 @@ object Patcher {
             .modules(effectiveModules.map { File(it.apkPath) })
             .manifestOverrides(
                 ManifestOverrides.builder()
+                    .versionCode(versionCodeOverride)
                     .label(labelOverride)
                     .targetSdkVersion(targetSdkOverride)
                     .extractNativeLibs(if (extractNativeLibs) true else null)

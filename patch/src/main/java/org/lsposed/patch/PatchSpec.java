@@ -25,7 +25,6 @@ public final class PatchSpec {
     private final File outputDir;
     private final boolean useManager;
     private final boolean debuggable;
-    private final boolean overrideVersionCode;
     private final int sigBypassLevel;
     private final boolean injectDex;
     private final boolean forceOverwrite;
@@ -39,7 +38,6 @@ public final class PatchSpec {
         this.outputDir = b.outputDir;
         this.useManager = b.useManager;
         this.debuggable = b.debuggable;
-        this.overrideVersionCode = b.overrideVersionCode;
         this.sigBypassLevel = b.sigBypassLevel;
         this.injectDex = b.injectDex;
         this.forceOverwrite = b.forceOverwrite;
@@ -69,10 +67,6 @@ public final class PatchSpec {
 
     public boolean debuggable() {
         return debuggable;
-    }
-
-    public boolean overrideVersionCode() {
-        return overrideVersionCode;
     }
 
     public int sigBypassLevel() {
@@ -116,7 +110,6 @@ public final class PatchSpec {
         private File outputDir = new File(".");
         private boolean useManager;
         private boolean debuggable;
-        private boolean overrideVersionCode;
         private int sigBypassLevel = Constants.SIGBYPASS_LV_DISABLE;
         private boolean injectDex;
         private boolean forceOverwrite;
@@ -146,11 +139,6 @@ public final class PatchSpec {
 
         public Builder debuggable(boolean debuggable) {
             this.debuggable = debuggable;
-            return this;
-        }
-
-        public Builder overrideVersionCode(boolean overrideVersionCode) {
-            this.overrideVersionCode = overrideVersionCode;
             return this;
         }
 

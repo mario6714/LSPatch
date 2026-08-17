@@ -60,7 +60,7 @@ object PatchReport {
         add("Mode         ${request.mode}")
         add("Sig bypass   lv${request.sigBypassLevel}")
         add("Debuggable   ${request.debuggable}")
-        add("Override vc  ${request.overrideVersionCode}")
+        add("Version code ${request.versionCodeOverride?.toString() ?: "app's own"}")
         add("Inject dex   ${request.injectDex}")
         add("Keystore     ${if (MyKeyStore.useDefault) "built-in" else "custom (${MyKeyStore.file.name})"}")
         add("Verbose      ${Configs.detailPatchLogs}")

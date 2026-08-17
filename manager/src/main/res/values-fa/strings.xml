@@ -59,8 +59,6 @@
     <string name="patch_sigbypasslv0">lv0: خاموش</string>
     <string name="patch_sigbypasslv1">lv1: دور زدن PM</string>
     <string name="patch_sigbypasslv2">lv2: دور زدن PM + openat (libc)</string>
-    <string name="patch_override_version_code">بازنویسی کد نسخه</string>
-    <string name="patch_override_version_code_desc">کد نسخه برنامه پچ‌شده را به ۱ تغییر می‌دهد\nاین کار امکان نصب نسخه پایین‌تر را در آینده فراهم می‌کند و معمولاً بر کد نسخه‌ای که خود برنامه واقعاً درک می‌کند تأثیری ندارد</string>
     <string name="patch_return">بازگشت</string>
     <string name="patch_uninstall_text">به دلیل تفاوت در امضاها، باید قبل از نصب نسخه پچ‌شده، برنامه اصلی را حذف نصب کنید.\nمطمئن شوید که از داده‌های شخصی خود نسخه پشتیبان تهیه کرده‌اید.</string>
     <string name="patch_install_successfully">نصب شد</string>
@@ -136,6 +134,8 @@
     <string name="patch_local_summary">manager ماژول‌های این برنامه را ارائه می‌کند</string>
     <string name="patch_integrated_summary">ماژول‌ها درون APK تعبیه می‌شوند</string>
     <string name="patch_section_manifest">مانیفست</string>
+    <string name="patch_manifest_version_code">کد نسخه</string>
+    <string name="patch_manifest_version_code_hint">برای حفظ مقدار اصلی خالی بگذارید</string>
     <string name="patch_manifest_label">نام برنامه</string>
     <string name="patch_manifest_label_hint">برای حفظ نام اصلی خالی بگذارید</string>
     <string name="patch_manifest_extract_libs">استخراج کتابخانه‌های بومی</string>

@@ -72,7 +72,7 @@ suspend fun rePatchRequestFor(
         ),
         mode = mode ?: config?.mode ?: PatchMode.Local,
         debuggable = config?.debuggable ?: false,
-        overrideVersionCode = config?.overrideVersionCode ?: false,
+        versionCodeOverride = config?.versionCode,
         sigBypassLevel = config?.sigBypassLevel ?: 2,
         injectDex = config?.injectDex ?: false,
         modules = modules ?: embedded,

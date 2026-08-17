@@ -53,8 +53,8 @@ public class LSPatch {
     @Parameter(names = {"--manager"}, description = "Use manager (Cannot work with embedding modules)")
     private boolean useManager = false;
 
-    @Parameter(names = {"-r", "--allowdown"}, description = "Allow downgrade installation by overriding versionCode to 1 (In most cases, the app can still get the correct versionCode)")
-    private boolean overrideVersionCode = false;
+    @Parameter(names = {"--version-code"}, description = "Set the patched app's versionCode to this value (e.g. 1, so a later build can be installed over it)")
+    private Integer versionCodeOverride = null;
 
     @Parameter(names = {"-v", "--verbose"}, description = "Verbose output")
     private boolean verbose = false;
@@ -120,6 +120,7 @@ public class LSPatch {
                         keystoreArgs.get(2),
                         keystoreArgs.get(3));
         ManifestOverrides overrides = ManifestOverrides.builder()
+                .versionCode(versionCodeOverride)
                 .label(labelOverride)
                 .targetSdkVersion(targetSdkOverride)
                 .extractNativeLibs(extractNativeLibs ? Boolean.TRUE : null)
@@ -130,7 +131,6 @@ public class LSPatch {
                 .outputDir(new File(outputPath))
                 .useManager(useManager)
                 .debuggable(debuggableFlag)
-                .overrideVersionCode(overrideVersionCode)
                 .sigBypassLevel(sigbypassLevel)
                 .injectDex(injectDex)
                 .forceOverwrite(forceOverwrite)

@@ -73,12 +73,14 @@ data class PatchRequest(
     val target: PatchTarget,
     val mode: PatchMode,
     val debuggable: Boolean = false,
-    val overrideVersionCode: Boolean = false,
     val sigBypassLevel: Int = 2,
     val injectDex: Boolean = false,
     val modules: List<ModuleRef> = emptyList(),
     // Manifest overrides -- null means "leave the app's own value". Patch-time only: they are baked
-    // into the manifest, not recorded in the runtime config, so a re-patch starts them fresh.
+    // into the manifest, not recorded in the runtime config, so a re-patch starts them fresh. The
+    // version code is the exception: the patched app records the one it was given, so a re-patch
+    // offers it back rather than silently letting the app's own number return.
+    val versionCodeOverride: Int? = null,
     val labelOverride: String? = null,
     val targetSdkOverride: Int? = null,
     val extractNativeLibs: Boolean = false,

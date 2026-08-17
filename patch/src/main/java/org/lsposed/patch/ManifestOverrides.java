@@ -14,6 +14,17 @@ package org.lsposed.patch;
  */
 public final class ManifestOverrides {
 
+    /**
+     * A new {@code android:versionCode}, or null to keep the app's own.
+     *
+     * This is the number the installer orders versions by, distinct from the version name the user
+     * sees. Pinning it low -- 1 is the usual choice -- keeps a later patched build from being refused
+     * as a downgrade, since the installer rejects a version code below the one already installed; any
+     * value is accepted. The app itself normally still reports its real version, which is compiled
+     * into its code rather than read from this attribute.
+     */
+    public final Integer versionCode;
+
     /** A new {@code android:label} for the app -- what the launcher and settings show it as. */
     public final String label;
 
@@ -35,6 +46,7 @@ public final class ManifestOverrides {
     public final Boolean usesCleartextTraffic;
 
     private ManifestOverrides(Builder b) {
+        this.versionCode = b.versionCode;
         this.label = b.label;
         this.targetSdkVersion = b.targetSdkVersion;
         this.extractNativeLibs = b.extractNativeLibs;
@@ -43,7 +55,7 @@ public final class ManifestOverrides {
 
     /** True when nothing is overridden, so the patcher can skip the work entirely. */
     public boolean isEmpty() {
-        return label == null && targetSdkVersion == null
+        return versionCode == null && label == null && targetSdkVersion == null
                 && extractNativeLibs == null && usesCleartextTraffic == null;
     }
 
@@ -56,10 +68,16 @@ public final class ManifestOverrides {
     }
 
     public static final class Builder {
+        private Integer versionCode;
         private String label;
         private Integer targetSdkVersion;
         private Boolean extractNativeLibs;
         private Boolean usesCleartextTraffic;
+
+        public Builder versionCode(Integer versionCode) {
+            this.versionCode = versionCode;
+            return this;
+        }
 
         public Builder label(String label) {
             this.label = (label == null || label.isBlank()) ? null : label;

@@ -59,8 +59,6 @@
     <string name="patch_sigbypasslv0">lv0: כבוי</string>
     <string name="patch_sigbypasslv1">lv1: עקיפת PM</string>
     <string name="patch_sigbypasslv2">lv2: עקיפת PM + openat (libc)</string>
-    <string name="patch_override_version_code">עקוף קוד גרסה</string>
-    <string name="patch_override_version_code_desc">עוקף את קוד הגרסה של האפליקציה עם הטלאי ל-1\nזה מאפשר התקנת שדרוג לאחור בעתיד, ובדרך כלל לא ישפיע על קוד הגרסה שהאפליקציה תופסת בפועל</string>
     <string name="patch_return">חזור</string>
     <string name="patch_uninstall_text">בשל חתימות שונות, עליך להסיר את התקנת האפליקציה המקורית לפני התקנת זו עם הטלאי.\nודא שגיבית את הנתונים האישיים.</string>
     <string name="patch_install_successfully">הותקן</string>
@@ -136,6 +134,8 @@
     <string name="patch_local_summary">המנהל מספק את המודולים של האפליקציה הזו</string>
     <string name="patch_integrated_summary">המודולים מוטמעים ב-APK</string>
     <string name="patch_section_manifest">מניפסט</string>
+    <string name="patch_manifest_version_code">קוד גרסה</string>
+    <string name="patch_manifest_version_code_hint">יש להשאיר ריק כדי לשמור על המקורי</string>
     <string name="patch_manifest_label">שם האפליקציה</string>
     <string name="patch_manifest_label_hint">השאירו ריק כדי לשמור על השם המקורי</string>
     <string name="patch_manifest_extract_libs">חילוץ ספריות נייטיב</string>

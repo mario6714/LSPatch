@@ -180,7 +180,7 @@ public final class ApkPatcher {
             PatchConfig config = new PatchConfig(
                     spec.useManager(),
                     spec.debuggable(),
-                    spec.overrideVersionCode(),
+                    spec.manifestOverrides().versionCode,
                     spec.sigBypassLevel(),
                     originalSignature,
                     manifest.appComponentFactory,
@@ -426,9 +426,6 @@ public final class ApkPatcher {
     private byte[] modifyManifestFile(InputStream is, String metadata, int minSdkVersion) throws IOException {
         ModificationProperty property = new ModificationProperty();
 
-        if (spec.overrideVersionCode()) {
-            property.addManifestAttribute(new AttributeItem(NodeValue.Manifest.VERSION_CODE, 1));
-        }
         // The loader is built against 28; an app declaring less would be refused the APIs it uses.
         if (minSdkVersion < 28) {
             property.addUsesSdkAttribute(new AttributeItem(NodeValue.UsesSDK.MIN_SDK_VERSION, 28));
@@ -454,13 +451,18 @@ public final class ApkPatcher {
      * Applies the caller's chosen manifest overrides on top of the loader's own rewrites.
      *
      * Each is set only when the caller asked for it, so an app the user did not want changed keeps
-     * every attribute exactly as its author wrote it. A label override replaces the launcher name; a
-     * target-SDK override changes the compatibility behaviours the platform applies; the two booleans
-     * flip install-time and network policy an app otherwise fixes against a module's needs.
+     * every attribute exactly as its author wrote it. A version-code override decides what the
+     * installer may replace the app with; a label override replaces the launcher name; a target-SDK
+     * override changes the compatibility behaviours the platform applies; the two booleans flip
+     * install-time and network policy an app otherwise fixes against a module's needs.
      */
     private void applyManifestOverrides(ModificationProperty property) {
         ManifestOverrides o = spec.manifestOverrides();
         if (o.isEmpty()) return;
+        if (o.versionCode != null) {
+            logger.i("Override versionCode: " + o.versionCode);
+            property.addManifestAttribute(new AttributeItem(NodeValue.Manifest.VERSION_CODE, o.versionCode));
+        }
         if (o.label != null) {
             logger.i("Override label: " + o.label);
             property.addApplicationAttribute(new AttributeItem(NodeValue.Application.LABEL, o.label));

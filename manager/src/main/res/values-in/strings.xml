@@ -59,8 +59,6 @@
     <string name="patch_sigbypasslv0">lv0: Mati</string>
     <string name="patch_sigbypasslv1">lv1: Lewati PM</string>
     <string name="patch_sigbypasslv2">lv2: Lewati PM + openat (libc)</string>
-    <string name="patch_override_version_code">Timpa kode versi</string>
-    <string name="patch_override_version_code_desc">Menimpa kode versi aplikasi yang ditambal menjadi 1\nIni memungkinkan pemasangan versi lebih rendah di masa mendatang, dan umumnya ini tidak memengaruhi kode versi yang sebenarnya dirasakan oleh aplikasi</string>
     <string name="patch_return">Kembali</string>
     <string name="patch_uninstall_text">Karena tanda tangan yang berbeda, Anda perlu mencopot aplikasi asli sebelum memasang versi yang ditambal.\nPastikan Anda telah mencadangkan data pribadi.</string>
     <string name="patch_install_successfully">Terpasang</string>
@@ -136,6 +134,8 @@
     <string name="patch_local_summary">Pengelola menyediakan modul untuk aplikasi ini</string>
     <string name="patch_integrated_summary">Modul disematkan ke dalam APK</string>
     <string name="patch_section_manifest">Manifest</string>
+    <string name="patch_manifest_version_code">Kode versi</string>
+    <string name="patch_manifest_version_code_hint">Biarkan kosong untuk mempertahankan yang asli</string>
     <string name="patch_manifest_label">Nama aplikasi</string>
     <string name="patch_manifest_label_hint">Kosongkan untuk mempertahankan nama asli</string>
     <string name="patch_manifest_extract_libs">Ekstrak pustaka native</string>

@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -97,6 +98,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -317,7 +319,7 @@ fun NewPatchScreen(
                     modules = viewModel.modules,
                     onMode = viewModel::setMode,
                     onDebuggable = viewModel::setDebuggable,
-                    onOverrideVersionCode = viewModel::setOverrideVersionCode,
+                    onVersionCode = viewModel::setVersionCodeOverride,
                     onInjectDex = viewModel::setInjectDex,
                     onSigBypass = viewModel::setSigBypassLevel,
                     onRemoveModule = viewModel::removeModule,
@@ -368,7 +370,7 @@ private fun ConfigureBody(
     modules: List<ModuleBinding>,
     onMode: (PatchMode) -> Unit,
     onDebuggable: (Boolean) -> Unit,
-    onOverrideVersionCode: (Boolean) -> Unit,
+    onVersionCode: (Int?) -> Unit,
     onInjectDex: (Boolean) -> Unit,
     onSigBypass: (Int) -> Unit,
     onRemoveModule: (String) -> Unit,
@@ -524,6 +526,29 @@ private fun ConfigureBody(
                 // the runtime config, so they reset on a re-patch and each field starts from the app's
                 // own value. Grouped together in the order the manifest declares them -- identity,
                 // then the boolean flags -- so this list and the patched app's detail page read alike.
+                var versionCode by rememberSaveable {
+                    mutableStateOf(request.versionCodeOverride?.toString().orEmpty())
+                }
+                OutlinedTextField(
+                    value = versionCode,
+                    onValueChange = { entered ->
+                        // Digits only, and only while they still fit an int. A keystroke that would
+                        // overflow is dropped rather than accepted: the field must never show a
+                        // number the request cannot carry, which is what an unparseable entry --
+                        // read back as "no override at all" -- would amount to.
+                        val digits = entered.filter { it.isDigit() }
+                        if (digits.isEmpty() || digits.toIntOrNull() != null) {
+                            versionCode = digits
+                            onVersionCode(digits.toIntOrNull())
+                        }
+                    },
+                    label = { Text(stringResource(R.string.patch_manifest_version_code)) },
+                    placeholder = { Text(stringResource(R.string.patch_manifest_version_code_hint)) },
+                    leadingIcon = { Icon(Icons.Rounded.Layers, contentDescription = null) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                )
                 var label by rememberSaveable { mutableStateOf(request.labelOverride.orEmpty()) }
                 OutlinedTextField(
                     value = label,
@@ -539,13 +564,6 @@ private fun ConfigureBody(
                     icon = Icons.Rounded.BugReport,
                     checked = request.debuggable,
                     onCheckedChange = onDebuggable,
-                )
-                ToggleRow(
-                    title = stringResource(R.string.patch_override_version_code),
-                    icon = Icons.Rounded.Layers,
-                    subtitle = stringResource(R.string.patch_override_version_code_desc),
-                    checked = request.overrideVersionCode,
-                    onCheckedChange = onOverrideVersionCode,
                 )
                 ToggleRow(
                     title = stringResource(R.string.patch_manifest_extract_libs),
@@ -604,8 +622,10 @@ private fun advancedChips(request: PatchRequest): List<OptionChipData> = buildLi
     if (request.debuggable) {
         add(OptionChipData(stringResource(R.string.patch_debuggable), true, Icons.Rounded.BugReport))
     }
-    if (request.overrideVersionCode) {
-        add(OptionChipData(stringResource(R.string.patch_override_version_code), true, Icons.Rounded.Layers))
+    request.versionCodeOverride?.let { versionCode ->
+        // The number itself, the way the bypass chip shows its level: which version code was chosen
+        // is the whole point of having overridden it.
+        add(OptionChipData("vc $versionCode", true, Icons.Rounded.Layers))
     }
     if (request.injectDex) {
         add(OptionChipData(stringResource(R.string.patch_inject_dex), true, Icons.Rounded.Code))

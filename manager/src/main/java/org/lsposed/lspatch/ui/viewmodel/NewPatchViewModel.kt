@@ -82,7 +82,7 @@ class NewPatchViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
 
     fun setDebuggable(value: Boolean) = mutate { it.copy(debuggable = value) }
 
-    fun setOverrideVersionCode(value: Boolean) = mutate { it.copy(overrideVersionCode = value) }
+    fun setVersionCodeOverride(value: Int?) = mutate { it.copy(versionCodeOverride = value) }
 
     fun setInjectDex(value: Boolean) = mutate { it.copy(injectDex = value) }
 

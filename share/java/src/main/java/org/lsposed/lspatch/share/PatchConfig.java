@@ -4,7 +4,9 @@ public class PatchConfig {
 
     public final boolean useManager;
     public final boolean debuggable;
-    public final boolean overrideVersionCode;
+
+    /** The chosen {@code android:versionCode}, or null when the app kept its own. */
+    public final Integer versionCode;
     public final int sigBypassLevel;
     public final String originalSignature;
     public final String appComponentFactory;
@@ -20,7 +22,7 @@ public class PatchConfig {
     public PatchConfig(
             boolean useManager,
             boolean debuggable,
-            boolean overrideVersionCode,
+            Integer versionCode,
             int sigBypassLevel,
             String originalSignature,
             String appComponentFactory,
@@ -28,7 +30,7 @@ public class PatchConfig {
     ) {
         this.useManager = useManager;
         this.debuggable = debuggable;
-        this.overrideVersionCode = overrideVersionCode;
+        this.versionCode = versionCode;
         this.sigBypassLevel = sigBypassLevel;
         this.originalSignature = originalSignature;
         this.appComponentFactory = appComponentFactory;
