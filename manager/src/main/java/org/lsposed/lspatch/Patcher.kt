@@ -42,6 +42,7 @@ object Patcher {
                     .targetSdkVersion(targetSdkOverride)
                     .extractNativeLibs(if (extractNativeLibs) true else null)
                     .usesCleartextTraffic(if (usesCleartextTraffic) true else null)
+                    .permissions(addedPermissions)
                     .build()
             )
             .keystore(

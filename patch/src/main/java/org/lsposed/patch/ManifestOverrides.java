@@ -1,5 +1,10 @@
 package org.lsposed.patch;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.List;
+
 /**
  * Optional overrides applied to the patched app's manifest.
  *
@@ -9,8 +14,9 @@ package org.lsposed.patch;
  * list of loose parameters -- adding another overridable attribute is a field here and a line in
  * {@link ApkPatcher}, nothing more.
  *
- * Every field is nullable and means "leave as the original app had it" when null, so the empty
- * overrides are a no-op and an unpatched attribute is never touched.
+ * Every scalar field is nullable and means "leave as the original app had it" when null, so the
+ * empty overrides are a no-op and an unpatched attribute is never touched. {@link #addedPermissions}
+ * follows the same rule with an empty list.
  */
 public final class ManifestOverrides {
 
@@ -45,18 +51,47 @@ public final class ManifestOverrides {
      */
     public final Boolean usesCleartextTraffic;
 
+    /**
+     * Extra {@code <uses-permission>} entries to declare, so a module can use a permission the app
+     * itself never asked for -- {@code INTERNET} being the usual one. Never null; empty adds nothing.
+     * A name the app already declares is a no-op (the manifest editor skips duplicates), so this is
+     * always additive and safe to hand the app's own permissions.
+     */
+    public final List<String> addedPermissions;
+
     private ManifestOverrides(Builder b) {
         this.versionCode = b.versionCode;
         this.label = b.label;
         this.targetSdkVersion = b.targetSdkVersion;
         this.extractNativeLibs = b.extractNativeLibs;
         this.usesCleartextTraffic = b.usesCleartextTraffic;
+        this.addedPermissions = Collections.unmodifiableList(new ArrayList<>(b.addedPermissions));
     }
 
     /** True when nothing is overridden, so the patcher can skip the work entirely. */
     public boolean isEmpty() {
         return versionCode == null && label == null && targetSdkVersion == null
-                && extractNativeLibs == null && usesCleartextTraffic == null;
+                && extractNativeLibs == null && usesCleartextTraffic == null
+                && addedPermissions.isEmpty();
+    }
+
+    /**
+     * Canonicalises a permission the way a user is likely to type it.
+     *
+     * A bare token ({@code "INTERNET"}, or lower-case {@code "internet"}) is the framework name
+     * {@code android.permission.INTERNET} with its prefix and casing left off, so it is completed
+     * and upper-cased. Anything already dotted -- a fully-qualified framework name, or a vendor
+     * permission like {@code com.android.launcher.permission.INSTALL_SHORTCUT} -- is a real name as
+     * written and only trimmed. Blank in, empty out.
+     *
+     * Shared so the CLI and the manager never drift into two spellings of the same permission.
+     */
+    public static String normalizePermission(String raw) {
+        if (raw == null) return "";
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) return "";
+        if (trimmed.indexOf('.') >= 0) return trimmed;
+        return "android.permission." + trimmed.toUpperCase(java.util.Locale.ROOT);
     }
 
     public static ManifestOverrides none() {
@@ -73,6 +108,9 @@ public final class ManifestOverrides {
         private Integer targetSdkVersion;
         private Boolean extractNativeLibs;
         private Boolean usesCleartextTraffic;
+        // A set behind an ordered facade: duplicates a caller passes are collapsed here, while the
+        // order the user added them in is what the report and the re-patch see.
+        private final LinkedHashSet<String> addedPermissions = new LinkedHashSet<>();
 
         public Builder versionCode(Integer versionCode) {
             this.versionCode = versionCode;
@@ -96,6 +134,21 @@ public final class ManifestOverrides {
 
         public Builder usesCleartextTraffic(Boolean usesCleartextTraffic) {
             this.usesCleartextTraffic = usesCleartextTraffic;
+            return this;
+        }
+
+        /** Adds one permission; blank names are ignored so a stray argument cannot empty a tag. */
+        public Builder addPermission(String permission) {
+            if (permission != null && !permission.isBlank()) {
+                this.addedPermissions.add(permission.trim());
+            }
+            return this;
+        }
+
+        public Builder permissions(List<String> permissions) {
+            if (permissions != null) {
+                permissions.forEach(this::addPermission);
+            }
             return this;
         }
 

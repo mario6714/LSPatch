@@ -14,6 +14,7 @@ import org.lsposed.lspatch.data.model.PatchMode
 import org.lsposed.lspatch.data.model.PatchRequest
 import org.lsposed.lspatch.data.repository.PatchRequestStore
 import org.lsposed.lspatch.util.LSPPackageManager
+import org.lsposed.patch.ManifestOverrides
 import java.io.File
 
 /**
@@ -94,6 +95,22 @@ class NewPatchViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
     fun setExtractNativeLibs(value: Boolean) = mutate { it.copy(extractNativeLibs = value) }
 
     fun setUsesCleartextTraffic(value: Boolean) = mutate { it.copy(usesCleartextTraffic = value) }
+
+    /**
+     * Adds a permission, canonicalised and de-duplicated.
+     *
+     * The name is normalised the same way the patcher's CLI normalises it -- one rule, in the patch
+     * module -- so a bare "INTERNET" and a typed-out "android.permission.INTERNET" are the same
+     * entry rather than two. A blank field or a name already in the set changes nothing.
+     */
+    fun addPermission(raw: String) = mutate {
+        val name = ManifestOverrides.normalizePermission(raw)
+        if (name.isEmpty() || name in it.addedPermissions) it
+        else it.copy(addedPermissions = it.addedPermissions + name)
+    }
+
+    fun removePermission(name: String) =
+        mutate { it.copy(addedPermissions = it.addedPermissions - name) }
 
     /**
      * Adds modules to the set, keeping what is already there.

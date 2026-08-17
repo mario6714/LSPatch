@@ -142,6 +142,12 @@
     <string name="patch_manifest_extract_libs_desc">نصب‌کننده را وادار می‌کند کتابخانه‌های بومی برنامه را استخراج کند. برای ماژولی که به کد بومی خودِ برنامه روی دیسک نیاز دارد سودمند است.</string>
     <string name="patch_manifest_cleartext">اجازهٔ ترافیک متن‌ساده</string>
     <string name="patch_manifest_cleartext_desc">به برنامه اجازه می‌دهد اتصال‌های HTTP ساده‌ای را که وگرنه رد می‌کرد برقرار کند. برای ماژول بازرسی ترافیک سودمند است.</string>
+    <string name="patch_manifest_permissions">افزودن مجوز</string>
+    <string name="patch_manifest_permissions_hint">مثلاً INTERNET</string>
+    <string name="patch_manifest_permissions_desc">مجوزی را که برنامه ندارد اعلام کنید تا یک ماژول بتواند از آن استفاده کند. نام کوتاه به android.permission.NAME تبدیل می‌شود؛ مجوزی که برنامه از قبل دارد نادیده گرفته می‌شود.</string>
+    <string name="patch_manifest_permissions_add">افزودن</string>
+    <string name="patch_manifest_permissions_remove">حذف</string>
+    <string name="patch_manifest_permissions_count">%1$d افزوده شد</string>
     <string name="patch_select_target">برنامه‌ای برای پچ انتخاب کنید</string>
     <string name="patch_target_loading">در حال بارگذاری برنامه‌های نصب‌شده…</string>
     <string name="patch_target_already_patched">قبلاً وصله شده</string>

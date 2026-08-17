@@ -184,7 +184,8 @@ public final class ApkPatcher {
                     spec.sigBypassLevel(),
                     originalSignature,
                     manifest.appComponentFactory,
-                    spec.injectDex());
+                    spec.injectDex(),
+                    spec.manifestOverrides().addedPermissions.toArray(new String[0]));
             byte[] configBytes = new Gson().toJson(config).getBytes(StandardCharsets.UTF_8);
 
             rewriteManifest(srcZFile, dstZFile, configBytes, manifest.minSdkVersion, index, total);
@@ -478,6 +479,12 @@ public final class ApkPatcher {
         if (o.usesCleartextTraffic != null) {
             logger.i("Override usesCleartextTraffic: " + o.usesCleartextTraffic);
             property.addApplicationAttribute(new AttributeItem("usesCleartextTraffic", o.usesCleartextTraffic));
+        }
+        // The editor keys uses-permission by name and drops a name the manifest already carries, so
+        // handing it one the app declares is harmless -- the added set need not be filtered first.
+        for (String permission : o.addedPermissions) {
+            logger.i("Add permission: " + permission);
+            property.addUsesPermission(permission);
         }
     }
 }

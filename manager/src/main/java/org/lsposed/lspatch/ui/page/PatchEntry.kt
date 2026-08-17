@@ -73,6 +73,8 @@ suspend fun rePatchRequestFor(
         mode = mode ?: config?.mode ?: PatchMode.Local,
         debuggable = config?.debuggable ?: false,
         versionCodeOverride = config?.versionCode,
+        // Recovered from the recorded config, not the original apks -- those never carried them.
+        addedPermissions = config?.addedPermissions?.toList() ?: emptyList(),
         sigBypassLevel = config?.sigBypassLevel ?: 2,
         injectDex = config?.injectDex ?: false,
         modules = modules ?: embedded,

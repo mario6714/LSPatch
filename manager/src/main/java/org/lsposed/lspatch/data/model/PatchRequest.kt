@@ -85,6 +85,9 @@ data class PatchRequest(
     val targetSdkOverride: Int? = null,
     val extractNativeLibs: Boolean = false,
     val usesCleartextTraffic: Boolean = false,
+    // Extra uses-permission names, already canonical. Recorded in the patched app's config, unlike
+    // the overrides above, so a re-patch that only recovers the original apks still keeps them.
+    val addedPermissions: List<String> = emptyList(),
     val origin: PatchOrigin = PatchOrigin.New,
 ) {
     val packageName: String get() = target.packageName

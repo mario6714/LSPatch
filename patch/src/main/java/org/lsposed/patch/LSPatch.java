@@ -74,6 +74,9 @@ public class LSPatch {
     @Parameter(names = {"--cleartext"}, description = "Force android:usesCleartextTraffic=true")
     private boolean usesCleartextTraffic = false;
 
+    @Parameter(names = {"--add-permission"}, description = "Add a <uses-permission> to the manifest (repeatable). A bare name is prefixed with android.permission.")
+    private List<String> addedPermissions = new ArrayList<>();
+
     private final JCommander jCommander;
 
     public LSPatch(String... args) {
@@ -125,6 +128,9 @@ public class LSPatch {
                 .targetSdkVersion(targetSdkOverride)
                 .extractNativeLibs(extractNativeLibs ? Boolean.TRUE : null)
                 .usesCleartextTraffic(usesCleartextTraffic ? Boolean.TRUE : null)
+                .permissions(addedPermissions.stream()
+                        .map(ManifestOverrides::normalizePermission)
+                        .collect(Collectors.toList()))
                 .build();
         return PatchSpec.builder()
                 .apks(apkPaths.stream().map(File::new).collect(Collectors.toList()))

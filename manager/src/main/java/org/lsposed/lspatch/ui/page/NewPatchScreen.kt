@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
@@ -55,6 +56,8 @@ import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.automirrored.rounded.Notes
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.RemoveModerator
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Smartphone
@@ -70,6 +73,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
+import androidx.compose.material3.InputChipDefaults
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -98,6 +104,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -334,6 +341,8 @@ fun NewPatchScreen(
                     onLabel = viewModel::setLabelOverride,
                     onExtractNativeLibs = viewModel::setExtractNativeLibs,
                     onCleartext = viewModel::setUsesCleartextTraffic,
+                    onAddPermission = viewModel::addPermission,
+                    onRemovePermission = viewModel::removePermission,
                 )
                 else -> Column(
                     Modifier
@@ -379,6 +388,8 @@ private fun ConfigureBody(
     onLabel: (String) -> Unit,
     onExtractNativeLibs: (Boolean) -> Unit,
     onCleartext: (Boolean) -> Unit,
+    onAddPermission: (String) -> Unit,
+    onRemovePermission: (String) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val snackbarHost = LocalSnackbarHost.current
@@ -579,6 +590,11 @@ private fun ConfigureBody(
                     checked = request.usesCleartextTraffic,
                     onCheckedChange = onCleartext,
                 )
+                PermissionEditor(
+                    added = request.addedPermissions,
+                    onAdd = onAddPermission,
+                    onRemove = onRemovePermission,
+                )
                 GroupDivider()
                 KeystoreSetting()
                 ToggleRow(
@@ -591,6 +607,119 @@ private fun ConfigureBody(
         }
 
         Spacer(Modifier.height(20.dp))
+    }
+}
+
+/**
+ * The permissions worth one tap, shortest name first.
+ *
+ * Not a catalogue -- the field below takes any permission -- just the handful a module most often
+ * finds missing, INTERNET at the front because it is the one the request that prompted this feature
+ * named. Fully qualified so they read the same here, on the chip, and in the manifest.
+ */
+private val COMMON_PERMISSIONS = listOf(
+    "android.permission.INTERNET",
+    "android.permission.ACCESS_NETWORK_STATE",
+    "android.permission.ACCESS_WIFI_STATE",
+    "android.permission.READ_EXTERNAL_STORAGE",
+    "android.permission.WRITE_EXTERNAL_STORAGE",
+    "android.permission.POST_NOTIFICATIONS",
+    "android.permission.QUERY_ALL_PACKAGES",
+)
+
+/** The last dotted segment -- what a permission is called once its namespace is understood. */
+private fun permissionShortName(name: String): String = name.substringAfterLast('.')
+
+/**
+ * Adds extra `uses-permission` entries to the patched manifest (issue #44).
+ *
+ * A module can need a permission the host app never declared -- INTERNET most often -- and without
+ * it the platform simply denies the call at runtime. The list is additive and de-duplicated: the
+ * manifest editor drops a name the app already has, so nothing here can remove or weaken a
+ * permission, only add one the app lacked.
+ *
+ * Three ways in, narrowing as they go: the common ones as one-tap suggestions, a field for anything
+ * else (a bare word is completed to `android.permission.*`), and each added permission shown as a
+ * chip that removes itself. The short name is what the eye needs; the full name rides along as the
+ * chip's accessibility label.
+ */
+@Composable
+private fun PermissionEditor(
+    added: List<String>,
+    onAdd: (String) -> Unit,
+    onRemove: (String) -> Unit,
+) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+        var entry by rememberSaveable { mutableStateOf("") }
+        val commit = {
+            if (entry.isNotBlank()) {
+                onAdd(entry)
+                entry = ""
+            }
+        }
+        OutlinedTextField(
+            value = entry,
+            onValueChange = { entry = it },
+            label = { Text(stringResource(R.string.patch_manifest_permissions)) },
+            placeholder = { Text(stringResource(R.string.patch_manifest_permissions_hint)) },
+            supportingText = { Text(stringResource(R.string.patch_manifest_permissions_desc)) },
+            leadingIcon = { Icon(Icons.Rounded.Key, contentDescription = null) },
+            trailingIcon = {
+                // Enabled only when there is something to add, so the button's state says whether a
+                // press will do anything before it is pressed.
+                IconButton(onClick = commit, enabled = entry.isNotBlank()) {
+                    Icon(
+                        Icons.Rounded.Add,
+                        contentDescription = stringResource(R.string.patch_manifest_permissions_add),
+                    )
+                }
+            },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { commit() }),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        // Suggestions the app does not already carry an override for; a suggestion vanishes once it
+        // has been added, so this row only ever offers work still worth doing.
+        val suggestions = COMMON_PERMISSIONS.filter { it !in added }
+        if (suggestions.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                suggestions.forEach { permission ->
+                    SuggestionChip(
+                        onClick = { onAdd(permission) },
+                        label = { Text(permissionShortName(permission)) },
+                    )
+                }
+            }
+        }
+
+        if (added.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                added.forEach { permission ->
+                    InputChip(
+                        selected = false,
+                        onClick = { onRemove(permission) },
+                        label = { Text(permissionShortName(permission)) },
+                        trailingIcon = {
+                            Icon(
+                                Icons.Rounded.Close,
+                                contentDescription = stringResource(R.string.patch_manifest_permissions_remove),
+                                modifier = Modifier.size(InputChipDefaults.AvatarSize),
+                            )
+                        },
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -629,6 +758,17 @@ private fun advancedChips(request: PatchRequest): List<OptionChipData> = buildLi
     }
     if (request.injectDex) {
         add(OptionChipData(stringResource(R.string.patch_inject_dex), true, Icons.Rounded.Code))
+    }
+    if (request.addedPermissions.isNotEmpty()) {
+        // A count, not the names: several full permission strings would overrun the header, and the
+        // fact that any were added is the summary the collapsed row is for.
+        add(
+            OptionChipData(
+                stringResource(R.string.patch_manifest_permissions_count, request.addedPermissions.size),
+                true,
+                Icons.Rounded.Key,
+            )
+        )
     }
     if (!MyKeyStore.useDefault) {
         add(OptionChipData(stringResource(R.string.settings_keystore_custom), true, Icons.Outlined.Ballot))

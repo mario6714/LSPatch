@@ -17,6 +17,14 @@ public class PatchConfig {
      * is exactly what those apps were built with.
      */
     public final boolean injectDex;
+
+    /**
+     * The {@code <uses-permission>} names the patch added on top of the app's own, or null for an
+     * apk patched before this was recorded. Kept here, unlike the other manifest overrides, because
+     * a re-patch recovers the *original* apks -- which never had these -- so without this record a
+     * loader update would silently drop the permissions a module depends on.
+     */
+    public final String[] addedPermissions;
     public final LSPConfig lspConfig;
 
     public PatchConfig(
@@ -26,7 +34,8 @@ public class PatchConfig {
             int sigBypassLevel,
             String originalSignature,
             String appComponentFactory,
-            boolean injectDex
+            boolean injectDex,
+            String[] addedPermissions
     ) {
         this.useManager = useManager;
         this.debuggable = debuggable;
@@ -35,6 +44,7 @@ public class PatchConfig {
         this.originalSignature = originalSignature;
         this.appComponentFactory = appComponentFactory;
         this.injectDex = injectDex;
+        this.addedPermissions = addedPermissions;
         this.lspConfig = LSPConfig.instance;
     }
 }
