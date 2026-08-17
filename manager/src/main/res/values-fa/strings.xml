@@ -148,6 +148,8 @@
     <string name="patch_manifest_permissions_add">افزودن</string>
     <string name="patch_manifest_permissions_remove">حذف</string>
     <string name="patch_manifest_permissions_count">%1$d افزوده شد</string>
+    <string name="patch_manifest_documents_provider">نمایش داده‌های خصوصی</string>
+    <string name="patch_manifest_documents_provider_desc">یک ارائه‌دهنده اضافه می‌کند تا یک مدیر فایل بتواند پوشهٔ دادهٔ خصوصی برنامه را از طریق انتخابگر فایل سیستم مرور کند، بدون نیاز به روت. دامنهٔ دسترسی به دادهٔ برنامه را گسترده می‌کند — اگر لازم ندارید خاموش بگذارید.</string>
     <string name="patch_select_target">برنامه‌ای برای پچ انتخاب کنید</string>
     <string name="patch_target_loading">در حال بارگذاری برنامه‌های نصب‌شده…</string>
     <string name="patch_target_already_patched">قبلاً وصله شده</string>

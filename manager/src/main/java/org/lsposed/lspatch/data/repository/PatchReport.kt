@@ -63,6 +63,7 @@ object PatchReport {
         add("Version code ${request.versionCodeOverride?.toString() ?: "app's own"}")
         add("Inject dex   ${request.injectDex}")
         add("Added perms  ${if (request.addedPermissions.isEmpty()) "none" else request.addedPermissions.joinToString(", ")}")
+        add("Docs provider ${request.injectDocumentsProvider}")
         add("Keystore     ${if (MyKeyStore.useDefault) "built-in" else "custom (${MyKeyStore.file.name})"}")
         add("Verbose      ${Configs.detailPatchLogs}")
         add("")

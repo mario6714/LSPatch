@@ -77,6 +77,9 @@ public class LSPatch {
     @Parameter(names = {"--add-permission"}, description = "Add a <uses-permission> to the manifest (repeatable). A bare name is prefixed with android.permission.")
     private List<String> addedPermissions = new ArrayList<>();
 
+    @Parameter(names = {"--documents-provider"}, description = "Inject a DocumentsProvider exposing the app's private data to the system file picker")
+    private boolean injectDocumentsProvider = false;
+
     private final JCommander jCommander;
 
     public LSPatch(String... args) {
@@ -131,6 +134,7 @@ public class LSPatch {
                 .permissions(addedPermissions.stream()
                         .map(ManifestOverrides::normalizePermission)
                         .collect(Collectors.toList()))
+                .injectDocumentsProvider(injectDocumentsProvider)
                 .build();
         return PatchSpec.builder()
                 .apks(apkPaths.stream().map(File::new).collect(Collectors.toList()))

@@ -88,6 +88,9 @@ data class PatchRequest(
     // Extra uses-permission names, already canonical. Recorded in the patched app's config, unlike
     // the overrides above, so a re-patch that only recovers the original apks still keeps them.
     val addedPermissions: List<String> = emptyList(),
+    // Inject a DocumentsProvider exposing the app's private data. Recorded in the config for the same
+    // reason as the permissions above.
+    val injectDocumentsProvider: Boolean = false,
     val origin: PatchOrigin = PatchOrigin.New,
 ) {
     val packageName: String get() = target.packageName

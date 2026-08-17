@@ -185,10 +185,11 @@ public final class ApkPatcher {
                     originalSignature,
                     manifest.appComponentFactory,
                     spec.injectDex(),
-                    spec.manifestOverrides().addedPermissions.toArray(new String[0]));
+                    spec.manifestOverrides().addedPermissions.toArray(new String[0]),
+                    spec.manifestOverrides().injectDocumentsProvider);
             byte[] configBytes = new Gson().toJson(config).getBytes(StandardCharsets.UTF_8);
 
-            rewriteManifest(srcZFile, dstZFile, configBytes, manifest.minSdkVersion, index, total);
+            rewriteManifest(srcZFile, dstZFile, configBytes, manifest.packageName, manifest.minSdkVersion, index, total);
             injectLoader(srcZFile, dstZFile, index, total);
             if (!spec.useManager()) {
                 addLoaderPayload(dstZFile);
@@ -287,13 +288,14 @@ public final class ApkPatcher {
      * reads it at startup without a package manager.
      */
     private void rewriteManifest(
-            NestedZip srcZFile, ZFile dstZFile, byte[] configBytes, int minSdkVersion, int index, int total)
+            NestedZip srcZFile, ZFile dstZFile, byte[] configBytes, String packageName, int minSdkVersion,
+            int index, int total)
             throws IOException {
         logger.stage(Logger.Stage.REWRITING, index, total);
         logger.i("Patching apk...");
         String metadata = Base64.getEncoder().encodeToString(configBytes);
         StoredEntry manifestEntry = Objects.requireNonNull(srcZFile.get(ANDROID_MANIFEST_XML));
-        try (InputStream is = new ByteArrayInputStream(modifyManifestFile(manifestEntry.open(), metadata, minSdkVersion))) {
+        try (InputStream is = new ByteArrayInputStream(modifyManifestFile(manifestEntry.open(), metadata, packageName, minSdkVersion))) {
             dstZFile.add(ANDROID_MANIFEST_XML, is);
         } catch (IOException e) {
             throw new PatchException("Error when modifying manifest", e);
@@ -424,7 +426,8 @@ public final class ApkPatcher {
                 && (name.endsWith(".SF") || name.endsWith(".MF") || name.endsWith(".RSA"));
     }
 
-    private byte[] modifyManifestFile(InputStream is, String metadata, int minSdkVersion) throws IOException {
+    private byte[] modifyManifestFile(InputStream is, String metadata, String packageName, int minSdkVersion)
+            throws IOException {
         ModificationProperty property = new ModificationProperty();
 
         // The loader is built against 28; an app declaring less would be refused the APIs it uses.
@@ -434,7 +437,7 @@ public final class ApkPatcher {
         property.addApplicationAttribute(new AttributeItem(NodeValue.Application.DEBUGGABLE, spec.debuggable()));
         property.addApplicationAttribute(new AttributeItem("appComponentFactory", PROXY_APP_COMPONENT_FACTORY));
         property.addMetaData(new ModificationProperty.MetaData("lspatch", metadata));
-        applyManifestOverrides(property);
+        applyManifestOverrides(property, packageName);
         // TODO: replace query_all with queries -> manager
         if (spec.useManager()) {
             property.addUsesPermission("android.permission.QUERY_ALL_PACKAGES");
@@ -457,7 +460,7 @@ public final class ApkPatcher {
      * override changes the compatibility behaviours the platform applies; the two booleans flip
      * install-time and network policy an app otherwise fixes against a module's needs.
      */
-    private void applyManifestOverrides(ModificationProperty property) {
+    private void applyManifestOverrides(ModificationProperty property, String packageName) {
         ManifestOverrides o = spec.manifestOverrides();
         if (o.isEmpty()) return;
         if (o.versionCode != null) {
@@ -486,5 +489,31 @@ public final class ApkPatcher {
             logger.i("Add permission: " + permission);
             property.addUsesPermission(permission);
         }
+        if (o.injectDocumentsProvider) {
+            addDocumentsProvider(property, packageName);
+        }
+    }
+
+    /**
+     * Declares the loader's {@code DocumentsProvider} so the app's private data shows up in the
+     * system file picker.
+     *
+     * The authority is per-package so two patched apps never collide. {@code MANAGE_DOCUMENTS} is the
+     * platform-signature permission the Documents UI holds, so gating the provider behind it means
+     * only the system can bind it -- access still flows through the user granting a tree, not through
+     * any app reaching the authority directly. {@code exported} and {@code grantUriPermissions} are
+     * passed as real booleans; a string {@code "true"} would be read back as false and quietly
+     * un-export the provider.
+     */
+    private void addDocumentsProvider(ModificationProperty property, String packageName) {
+        String authority = packageName + Constants.DOCUMENTS_PROVIDER_AUTHORITY_SUFFIX;
+        logger.i("Add documents provider: " + authority);
+        List<AttributeItem> attributes = new ArrayList<>();
+        attributes.add(new AttributeItem(NodeValue.Application.NAME, Constants.DOCUMENTS_PROVIDER_CLASS));
+        attributes.add(new AttributeItem(NodeValue.Application.Provider.AUTHORITIES, authority));
+        attributes.add(new AttributeItem("exported", Boolean.TRUE));
+        attributes.add(new AttributeItem("grantUriPermissions", Boolean.TRUE));
+        attributes.add(new AttributeItem(NodeValue.Application.Component.PERMISSION, "android.permission.MANAGE_DOCUMENTS"));
+        property.addProvider(attributes, "android.content.action.DOCUMENTS_PROVIDER");
     }
 }

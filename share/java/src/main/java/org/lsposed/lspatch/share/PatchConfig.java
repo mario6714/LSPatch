@@ -25,6 +25,13 @@ public class PatchConfig {
      * loader update would silently drop the permissions a module depends on.
      */
     public final String[] addedPermissions;
+
+    /**
+     * Whether a {@code DocumentsProvider} exposing the app's private data was injected. Recorded for
+     * the same reason as {@link #addedPermissions}: a re-patch recovers the original apks, which
+     * never carried it, so without this the option would silently turn itself off on a loader update.
+     */
+    public final boolean injectDocumentsProvider;
     public final LSPConfig lspConfig;
 
     public PatchConfig(
@@ -35,7 +42,8 @@ public class PatchConfig {
             String originalSignature,
             String appComponentFactory,
             boolean injectDex,
-            String[] addedPermissions
+            String[] addedPermissions,
+            boolean injectDocumentsProvider
     ) {
         this.useManager = useManager;
         this.debuggable = debuggable;
@@ -45,6 +53,7 @@ public class PatchConfig {
         this.appComponentFactory = appComponentFactory;
         this.injectDex = injectDex;
         this.addedPermissions = addedPermissions;
+        this.injectDocumentsProvider = injectDocumentsProvider;
         this.lspConfig = LSPConfig.instance;
     }
 }
