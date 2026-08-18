@@ -11,12 +11,12 @@ import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.Dispatchers
-import org.lsposed.lspatch.share.LSPConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import org.lsposed.lspatch.service.LogCollectorService
+import org.lsposed.lspatch.share.LSPConfig
 import org.lsposed.lspatch.util.LSPPackageManager
 import org.lsposed.lspatch.util.ShizukuApi
 import org.matrix.vector.ui.logs.LogContent
@@ -33,17 +33,16 @@ import org.matrix.vector.ui.logs.isThrowableHeader
 /**
  * LSPatch's Shizuku-backed implementation of the shared Logs screen's [LogSource].
  *
- * Where Vector streams a rotating file from a root daemon, LSPatch has [LogCollectorService] keep a
- * shell-side collector running continuously (see [ShizukuService]): it fans one live logcat into two
- * rotating, timestamped stream files the shell user owns — `verbose` (every line) and `framework`.
- * This reads those parts back — so the screen's part chevrons are real rotations, and logs captured
- * while the screen was closed are still there — falling back to a one-shot `logcat -d` snapshot only
- * in the gap before the collector has produced anything.
+ * Where Vector streams a rotating file from a root daemon, LSPatch has [LogCollectorService] keep a shell-side
+ * collector running continuously (see [ShizukuService]): it fans one live logcat into two rotating, timestamped stream
+ * files the shell user owns — `verbose` (every line) and `framework`. This reads those parts back — so the screen's
+ * part chevrons are real rotations, and logs captured while the screen was closed are still there — falling back to a
+ * one-shot `logcat -d` snapshot only in the gap before the collector has produced anything.
  *
- * The framework stream is routed at collection time by uid: a line joins it when it comes from the
- * manager, a patched app or a module (their uids passed to the collector), or is an AndroidRuntime
- * warning/error or any fatal line. So the read side just parses the already-routed part — no per-line
- * package resolution — and the manager's own uid being in the set is why the stream is never empty.
+ * The framework stream is routed at collection time by uid: a line joins it when it comes from the manager, a patched
+ * app or a module (their uids passed to the collector), or is an AndroidRuntime warning/error or any fatal line. So the
+ * read side just parses the already-routed part — no per-line package resolution — and the manager's own uid being in
+ * the set is why the stream is never empty.
  */
 class LSPLogSource(private val context: Context) : LogSource {
 
@@ -68,13 +67,11 @@ class LSPLogSource(private val context: Context) : LogSource {
                 if (part != null) {
                     ShizukuApi.readLogPart(part, LIVE_MAX)
                 } else {
-                    val newest =
-                        ShizukuApi.listLogParts(LogCollectorService.LOG_DIR, prefix).lastOrNull()?.first
+                    val newest = ShizukuApi.listLogParts(LogCollectorService.LOG_DIR, prefix).lastOrNull()?.first
                     val live = newest?.let { ShizukuApi.readLogPart(it, LIVE_MAX) }
                     // Before the collector has written anything (Shizuku just granted, service still
                     // spinning up), fall back to a one-shot snapshot so the screen is never blank.
-                    if (!live.isNullOrBlank()) live
-                    else ShizukuApi.runShellCommand(snapshotCommand(verbose))
+                    if (!live.isNullOrBlank()) live else ShizukuApi.runShellCommand(snapshotCommand(verbose))
                 }
             } ?: return Result.failure(IOException("the Shizuku shell service is unavailable"))
 
@@ -104,86 +101,85 @@ class LSPLogSource(private val context: Context) : LogSource {
         "lspatch-report-${SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())}.zip"
 
     /**
-     * A bug-report archive, the LSPatch answer to Vector's daemon report: a zip gathering everything
-     * a report can act on, pulled through the Shizuku shell. It carries the whole collected history —
-     * both the verbose and the framework stream, part by part — plus the crash artefacts a shell user
-     * can reach with adb-level rights: tombstones, ANR traces, and the manager's own process state.
-     * There is no separate one-shot logcat (the rotations already are the log) and no dmesg. Every
-     * shell capture is best-effort and tail-capped for the Binder limit, so an unreadable one (a
-     * tombstone dir a stricter build denies) is simply omitted rather than failing the export.
+     * A bug-report archive, the LSPatch answer to Vector's daemon report: a zip gathering everything a report can act
+     * on, pulled through the Shizuku shell. It carries the whole collected history — both the verbose and the framework
+     * stream, part by part — plus the crash artefacts a shell user can reach with adb-level rights: tombstones, ANR
+     * traces, and the manager's own process state. There is no separate one-shot logcat (the rotations already are the
+     * log) and no dmesg. Every shell capture is best-effort and tail-capped for the Binder limit, so an unreadable one
+     * (a tombstone dir a stricter build denies) is simply omitted rather than failing the export.
      */
-    override suspend fun saveArchive(uri: Uri, verbose: Boolean): Result<Unit> =
-        runCatching {
-            withContext(Dispatchers.IO) {
-                val out =
-                    context.contentResolver.openOutputStream(uri)
-                        ?: throw IOException("could not open the document to write")
-                ZipOutputStream(out.buffered()).use { zip ->
-                    val c = LSPConfig.instance
-                    zip.setComment(
-                        "LSPatch ${c.VERSION_NAME} (${c.VERSION_CODE}) API ${c.API_CODE} " +
-                            "Vector ${c.CORE_VERSION_NAME} ${c.CORE_VERSION_HASH}"
-                    )
+    override suspend fun saveArchive(uri: Uri, verbose: Boolean): Result<Unit> = runCatching {
+        withContext(Dispatchers.IO) {
+            val out =
+                context.contentResolver.openOutputStream(uri)
+                    ?: throw IOException("could not open the document to write")
+            ZipOutputStream(out.buffered()).use { zip ->
+                val c = LSPConfig.instance
+                zip.setComment(
+                    "LSPatch ${c.VERSION_NAME} (${c.VERSION_CODE}) API ${c.API_CODE} " +
+                        "Vector ${c.CORE_VERSION_NAME} ${c.CORE_VERSION_HASH}"
+                )
 
-                    suspend fun entry(name: String, body: String?) {
-                        if (body.isNullOrEmpty()) return
-                        zip.putNextEntry(ZipEntry(name))
-                        zip.write(body.toByteArray())
-                        zip.closeEntry()
-                    }
-
-                    fun fileEntry(name: String, file: File) {
-                        if (!file.exists() || file.length() == 0L) return
-                        zip.putNextEntry(ZipEntry(name))
-                        file.inputStream().use { it.copyTo(zip) }
-                        zip.closeEntry()
-                    }
-
-                    // A directory captured file-by-file into a zip folder, the way Vector's daemon
-                    // addDir does it — one entry per file under [prefix], preserving the structure —
-                    // rather than flattening everything into one blob. The shell lists and reads each
-                    // file (the app cannot reach these paths cross-UID). Empty when it has no rights.
-                    suspend fun addDir(prefix: String, dir: String) {
-                        val names =
-                            ShizukuApi.runShellScript("ls -1 $dir 2>/dev/null").orEmpty()
-                                .lineSequence()
-                                .map { it.trim() }
-                                .filter { it.isNotEmpty() }
-                                .toList()
-                        for (name in names) {
-                            entry("$prefix/$name", ShizukuApi.runShellScript("cat '$dir/$name' 2>/dev/null"))
-                        }
-                    }
-
-                    entry("device.txt", deviceReport())
-                    entry("packages.txt", packageReport())
-                    // A verbatim copy of the module/scope database (the app owns it, so no shell is
-                    // needed), the way Vector's report ships modules_config.db. The -wal/-shm side
-                    // files go too, so the copy can be replayed to the exact committed + pending state.
-                    val db = context.getDatabasePath(CONFIG_DB)
-                    fileEntry("database/${db.name}", db)
-                    fileEntry("database/${db.name}-wal", File("${db.path}-wal"))
-                    fileEntry("database/${db.name}-shm", File("${db.path}-shm"))
-                    // Both streams' collected rotations, oldest first — the report's own history.
-                    for (prefix in listOf("verbose", "framework")) {
-                        ShizukuApi.listLogParts(LogCollectorService.LOG_DIR, prefix).forEach { (path, _) ->
-                            entry("logs/${path.substringAfterLast('/')}", ShizukuApi.readLogPart(path, LIVE_MAX))
-                        }
-                    }
-                    // Native crash dumps, as their own folder. (ANR traces are omitted: /data/anr is
-                    // not readable at the shell's rights — it needs a root dumpstate/bugreport.)
-                    addDir("tombstones", "/data/tombstones")
-                    // "self": the manager's own live process state, each file on its own like Vector's
-                    // proc/<pid> folder, so a report shows what the app was doing.
-                    val pid = android.os.Process.myPid()
-                    entry("self/status", ShizukuApi.runShellScript("cat /proc/$pid/status 2>/dev/null"))
-                    entry("self/cmdline", ShizukuApi.runShellScript("tr '\\0' ' ' < /proc/$pid/cmdline 2>/dev/null"))
-                    entry("self/maps", ShizukuApi.runShellScript("cat /proc/$pid/maps 2>/dev/null"))
-                    entry("getprop.txt", ShizukuApi.runShellCommand("getprop"))
-                    entry("ps.txt", ShizukuApi.runShellCommand("ps -A -o PID,PPID,USER,NAME"))
+                suspend fun entry(name: String, body: String?) {
+                    if (body.isNullOrEmpty()) return
+                    zip.putNextEntry(ZipEntry(name))
+                    zip.write(body.toByteArray())
+                    zip.closeEntry()
                 }
+
+                fun fileEntry(name: String, file: File) {
+                    if (!file.exists() || file.length() == 0L) return
+                    zip.putNextEntry(ZipEntry(name))
+                    file.inputStream().use { it.copyTo(zip) }
+                    zip.closeEntry()
+                }
+
+                // A directory captured file-by-file into a zip folder, the way Vector's daemon
+                // addDir does it — one entry per file under [prefix], preserving the structure —
+                // rather than flattening everything into one blob. The shell lists and reads each
+                // file (the app cannot reach these paths cross-UID). Empty when it has no rights.
+                suspend fun addDir(prefix: String, dir: String) {
+                    val names =
+                        ShizukuApi.runShellScript("ls -1 $dir 2>/dev/null")
+                            .orEmpty()
+                            .lineSequence()
+                            .map { it.trim() }
+                            .filter { it.isNotEmpty() }
+                            .toList()
+                    for (name in names) {
+                        entry("$prefix/$name", ShizukuApi.runShellScript("cat '$dir/$name' 2>/dev/null"))
+                    }
+                }
+
+                entry("device.txt", deviceReport())
+                entry("packages.txt", packageReport())
+                // A verbatim copy of the module/scope database (the app owns it, so no shell is
+                // needed), the way Vector's report ships modules_config.db. The -wal/-shm side
+                // files go too, so the copy can be replayed to the exact committed + pending state.
+                val db = context.getDatabasePath(CONFIG_DB)
+                fileEntry("database/${db.name}", db)
+                fileEntry("database/${db.name}-wal", File("${db.path}-wal"))
+                fileEntry("database/${db.name}-shm", File("${db.path}-shm"))
+                // Both streams' collected rotations, oldest first — the report's own history.
+                for (prefix in listOf("verbose", "framework")) {
+                    ShizukuApi.listLogParts(LogCollectorService.LOG_DIR, prefix).forEach { (path, _) ->
+                        entry("logs/${path.substringAfterLast('/')}", ShizukuApi.readLogPart(path, LIVE_MAX))
+                    }
+                }
+                // Native crash dumps, as their own folder. (ANR traces are omitted: /data/anr is
+                // not readable at the shell's rights — it needs a root dumpstate/bugreport.)
+                addDir("tombstones", "/data/tombstones")
+                // "self": the manager's own live process state, each file on its own like Vector's
+                // proc/<pid> folder, so a report shows what the app was doing.
+                val pid = android.os.Process.myPid()
+                entry("self/status", ShizukuApi.runShellScript("cat /proc/$pid/status 2>/dev/null"))
+                entry("self/cmdline", ShizukuApi.runShellScript("tr '\\0' ' ' < /proc/$pid/cmdline 2>/dev/null"))
+                entry("self/maps", ShizukuApi.runShellScript("cat /proc/$pid/maps 2>/dev/null"))
+                entry("getprop.txt", ShizukuApi.runShellCommand("getprop"))
+                entry("ps.txt", ShizukuApi.runShellCommand("ps -A -o PID,PPID,USER,NAME"))
             }
         }
+    }
 
     /** Build, framework and device facts — the header of any report. */
     private fun deviceReport(): String {
@@ -202,8 +198,7 @@ class LSPLogSource(private val context: Context) : LogSource {
     /** Every patched app and module by package name, so a report names exactly what is in play. */
     private fun packageReport(): String {
         val modules = LSPPackageManager.appList.filter { it.isModule }
-        val patched =
-            LSPPackageManager.appList.filter { it.app.metaData?.containsKey("lspatch") == true }
+        val patched = LSPPackageManager.appList.filter { it.app.metaData?.containsKey("lspatch") == true }
         return buildString {
             appendLine("Modules (${modules.size}):")
             if (modules.isEmpty()) appendLine("  (none)")
@@ -269,52 +264,49 @@ class LSPLogSource(private val context: Context) : LogSource {
         // native hook engine, and Vector's in-process framework classes. logcat's -s filterspec
         // matches tags exactly, so each is spelled out. Vector's daemon-only tags never appear
         // in a rootless, injected process, so they are left off.
-        val LOG_FILTERSPEC =
-            buildList {
-                    for (tag in
-                        listOf(
-                            "LSPatch",
-                            "LSPatch-HotReload",
-                            "LSPatch-SigBypass",
-                            "LSPlant",
-                            "Vector",
-                            "VectorNative",
-                            "VectorContext",
-                            "VectorDeopter",
-                            "VectorLegacyBridge",
-                            "VectorLifecycle",
-                            "VectorModuleClassLoader",
-                            "VectorModuleManager",
-                            "VectorProcessChannel",
-                            "VectorServiceClient",
-                            "XSharedPreferences",
-                            "XposedProvider",
-                            "XposedServiceHelper",
-                            "RemotePreferences",
-                        )) add("$tag:V")
-                    add("AndroidRuntime:E") // uncaught-exception stack traces
-                    add("libc:F") // native fatal signals
-                    add("DEBUG:F") // tombstone dumps
-                }
-                .joinToString(" ")
+        val LOG_FILTERSPEC = buildList {
+            for (tag in
+                listOf(
+                    "LSPatch",
+                    "LSPatch-HotReload",
+                    "LSPatch-SigBypass",
+                    "LSPlant",
+                    "Vector",
+                    "VectorNative",
+                    "VectorContext",
+                    "VectorDeopter",
+                    "VectorLegacyBridge",
+                    "VectorLifecycle",
+                    "VectorModuleClassLoader",
+                    "VectorModuleManager",
+                    "VectorProcessChannel",
+                    "VectorServiceClient",
+                    "XSharedPreferences",
+                    "XposedProvider",
+                    "XposedServiceHelper",
+                    "RemotePreferences",
+                )) add("$tag:V")
+            add("AndroidRuntime:E") // uncaught-exception stack traces
+            add("libc:F") // native fatal signals
+            add("DEBUG:F") // tombstone dumps
+        }
+            .joinToString(" ")
     }
 }
 
 /**
  * A [LogContent] over an in-memory `threadtime` snapshot.
  *
- * The snapshot is bounded and already parsed, so this satisfies the windowed reader contract
- * trivially: the "index" is a dense line map, a window is a slice of the list, and a scan is one
- * pass over it. `threadtime` carries no multi-line writev the way the daemon's own framing does, so
- * each element is already one logical entry — a plain line, or a crash [parseLogcat] folded, whose
- * frames live in its [LogRow.Entry.continuation] and whose own line stays its header. Either way one
- * index addresses one entry, so [entryStart] is the identity: a window boundary lands on an entry
- * that already carries its whole trace.
+ * The snapshot is bounded and already parsed, so this satisfies the windowed reader contract trivially: the "index" is
+ * a dense line map, a window is a slice of the list, and a scan is one pass over it. `threadtime` carries no multi-line
+ * writev the way the daemon's own framing does, so each element is already one logical entry — a plain line, or a crash
+ * [parseLogcat] folded, whose frames live in its [LogRow.Entry.continuation] and whose own line stays its header.
+ * Either way one index addresses one entry, so [entryStart] is the identity: a window boundary lands on an entry that
+ * already carries its whole trace.
  */
 class LogcatContent(private val entries: List<LogRow.Entry>) : LogContent {
 
-    override suspend fun index(): LogIndex =
-        LogIndex(LongArray(entries.size + 1) { it.toLong() }, droppedLeading = 0)
+    override suspend fun index(): LogIndex = LogIndex(LongArray(entries.size + 1) { it.toLong() }, droppedLeading = 0)
 
     override suspend fun readRows(index: LogIndex, lines: IntArray): List<LogRow> {
         val rows = ArrayList<LogRow>(lines.size + 8)
@@ -368,12 +360,11 @@ private val THREADTIME =
 /**
  * Parses a `logcat -v threadtime` dump into entries, dropping anything that is not a log line.
  *
- * `threadtime` reprints the prefix on every physical line, so a crash arrives as dozens of separate
- * entries — one `E AndroidRuntime: FATAL EXCEPTION…` header and a run of `\tat …` / `Caused by:` /
- * `… N more` lines, or a native tombstone under `DEBUG`/`libc`. Left flat they show as dozens of
- * rows and the shared backtrace UI, which folds an entry's [LogRow.Entry.continuation] into a
- * foldable trace, never sees one. So a second pass folds each crash block into a single entry whose
- * header line stays the message and whose following lines become the continuation — the shape
+ * `threadtime` reprints the prefix on every physical line, so a crash arrives as dozens of separate entries — one `E
+ * AndroidRuntime: FATAL EXCEPTION…` header and a run of `\tat …` / `Caused by:` / `… N more` lines, or a native
+ * tombstone under `DEBUG`/`libc`. Left flat they show as dozens of rows and the shared backtrace UI, which folds an
+ * entry's [LogRow.Entry.continuation] into a foldable trace, never sees one. So a second pass folds each crash block
+ * into a single entry whose header line stays the message and whose following lines become the continuation — the shape
  * Vector's own `LogFile` produces, so the same StackTrace renderer applies unchanged.
  */
 fun parseLogcat(raw: String): List<LogRow.Entry> {
@@ -398,8 +389,7 @@ fun parseLogcat(raw: String): List<LogRow.Entry> {
 }
 
 /** The tags that carry a crash dump, each line of which threadtime reprints under the same tag. */
-private fun isCrashTag(tag: String): Boolean =
-    tag == "AndroidRuntime" || tag == "DEBUG" || tag == "libc"
+private fun isCrashTag(tag: String): Boolean = tag == "AndroidRuntime" || tag == "DEBUG" || tag == "libc"
 
 private val JAVA_MORE = Regex("""^\s*\.\.\. \d+ more$""")
 private val NATIVE_FRAME = Regex("""^\s*#\d+\s+pc\b.*""")
@@ -426,18 +416,17 @@ private val NATIVE_MARKERS =
 /**
  * Whether [message] continues the crash its header began, rather than starting something new.
  *
- * Deliberately generous, because the tag is already pinned to one crash stream and the pid to one
- * process: a run of same-tag, same-pid lines under `AndroidRuntime`/`DEBUG`/`libc` is a single dump.
- * Indented lines (frames, registers, memory) are caught by their leading whitespace; the flush-left
- * links of a Java chain and the headings of a native dump are named out.
+ * Deliberately generous, because the tag is already pinned to one crash stream and the pid to one process: a run of
+ * same-tag, same-pid lines under `AndroidRuntime`/`DEBUG`/`libc` is a single dump. Indented lines (frames, registers,
+ * memory) are caught by their leading whitespace; the flush-left links of a Java chain and the headings of a native
+ * dump are named out.
  */
 /**
  * Whether [message] is a frame of a Java stack trace.
  *
- * Stricter than [continuesCrash], and deliberately so: this is the test applied under *ordinary*
- * tags, where a leading space means nothing in particular and swallowing every indented line would
- * fold unrelated output into whatever happened to precede it. Only the shapes `Throwable` actually
- * prints are accepted.
+ * Stricter than [continuesCrash], and deliberately so: this is the test applied under *ordinary* tags, where a leading
+ * space means nothing in particular and swallowing every indented line would fold unrelated output into whatever
+ * happened to precede it. Only the shapes `Throwable` actually prints are accepted.
  */
 private fun continuesJavaTrace(message: String): Boolean {
     val trimmed = message.trimStart()
@@ -462,21 +451,20 @@ private fun continuesCrash(message: String): Boolean {
 /**
  * Folds each trace or crash block into one entry, then re-indexes densely.
  *
- * Two rules, because there are two kinds of block. A **crash-tagged** line (`AndroidRuntime`,
- * `DEBUG`, `libc`) opens a dump whose continuation is generous: the tag already pins it to one crash
- * stream, so indented frames, registers and native headings all belong to it.
+ * Two rules, because there are two kinds of block. A **crash-tagged** line (`AndroidRuntime`, `DEBUG`, `libc`) opens a
+ * dump whose continuation is generous: the tag already pins it to one crash stream, so indented frames, registers and
+ * native headings all belong to it.
  *
- * Every **other** tag can still print a stack trace -- `Log.w(TAG, msg, throwable)` puts the message
- * and then its `at …` frames under that tag, and a great deal of the manager's own diagnostics are
- * logged exactly that way. Those fold under the stricter [continuesJavaTrace] test, and only when a
- * trace actually follows -- either the next line is already a frame, or, for a **banner** (a line that
- * is not itself a throwable header, the notice a logger prints above the exception it is about), the
- * next line is a throwable header and the one after it a frame. A banner then absorbs that header and
- * its frames, so the whole notice reads as one entry; a header-led trace does not absorb a *second*
+ * Every **other** tag can still print a stack trace -- `Log.w(TAG, msg, throwable)` puts the message and then its `at
+ * …` frames under that tag, and a great deal of the manager's own diagnostics are logged exactly that way. Those fold
+ * under the stricter [continuesJavaTrace] test, and only when a trace actually follows -- either the next line is
+ * already a frame, or, for a **banner** (a line that is not itself a throwable header, the notice a logger prints above
+ * the exception it is about), the next line is a throwable header and the one after it a frame. A banner then absorbs
+ * that header and its frames, so the whole notice reads as one entry; a header-led trace does not absorb a *second*
  * top-level header, so two back-to-back traces stay two entries.
  *
- * Dense re-indexing keeps position and [LogRow.index] in step, which the windowed reader and the lazy
- * list both rely on.
+ * Dense re-indexing keeps position and [LogRow.index] in step, which the windowed reader and the lazy list both rely
+ * on.
  */
 private fun foldCrashes(flat: List<LogRow.Entry>): List<LogRow.Entry> {
     val out = ArrayList<LogRow.Entry>(flat.size)
@@ -487,12 +475,13 @@ private fun foldCrashes(flat: List<LogRow.Entry>): List<LogRow.Entry> {
         fun sameStream(row: LogRow.Entry?) = row != null && row.tag == head.tag && row.pid == head.pid
         val next = flat.getOrNull(i + 1)
         val banner = !crash && !isThrowableHeader(head.message)
-        val opensTrace = sameStream(next) &&
-            (continuesJavaTrace(next!!.message) ||
-                (banner &&
-                    isThrowableHeader(next.message) &&
-                    sameStream(flat.getOrNull(i + 2)) &&
-                    continuesJavaTrace(flat[i + 2].message)))
+        val opensTrace =
+            sameStream(next) &&
+                (continuesJavaTrace(next!!.message) ||
+                    (banner &&
+                        isThrowableHeader(next.message) &&
+                        sameStream(flat.getOrNull(i + 2)) &&
+                        continuesJavaTrace(flat[i + 2].message)))
         if (!crash && !opensTrace) {
             out += head
             i++
@@ -501,7 +490,9 @@ private fun foldCrashes(flat: List<LogRow.Entry>): List<LogRow.Entry> {
         val continues: (String) -> Boolean =
             when {
                 crash -> ::continuesCrash
-                banner -> { msg -> continuesJavaTrace(msg) || isThrowableHeader(msg) }
+                banner -> { msg ->
+                    continuesJavaTrace(msg) || isThrowableHeader(msg)
+                }
                 else -> ::continuesJavaTrace
             }
         val continuation = ArrayList<String>()

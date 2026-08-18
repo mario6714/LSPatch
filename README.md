@@ -87,6 +87,9 @@ framework log. Two modes:
 - **Translations** are managed on [Crowdin](https://crowdin.com/project/lspatch_jingmatrix).
 - **Questions** go to [Discussions](https://github.com/JingMatrix/LSPatch/discussions); bug reports to
   [Issues](https://github.com/JingMatrix/LSPatch/issues).
+- **Code style** is enforced by [Spotless](https://github.com/diffplug/spotless) — run
+  `./gradlew spotlessApply` before submitting. It formats only the files you changed (ktfmt for
+  Kotlin, palantir-java-format for Java), so you never reflow untouched code.
 
 ---
 

@@ -1,6 +1,5 @@
 package org.lsposed.lspatch
 
-import org.lsposed.lspatch.IShizukuService
 import java.io.BufferedWriter
 import java.io.File
 import java.io.FileWriter
@@ -13,9 +12,9 @@ import kotlin.system.exitProcess
 class ShizukuService : IShizukuService.Stub() {
 
     /**
-     * The running `logcat` collector, or null. It streams to this service's own stdout, which a
-     * [readerThread] drains and fans into two rotating on-disk streams; a pipe nobody drained would
-     * eventually block logcat, so the reader must keep running for the collector's whole life.
+     * The running `logcat` collector, or null. It streams to this service's own stdout, which a [readerThread] drains
+     * and fans into two rotating on-disk streams; a pipe nobody drained would eventually block logcat, so the reader
+     * must keep running for the collector's whole life.
      */
     @Volatile private var collector: Process? = null
     @Volatile private var readerThread: Thread? = null
@@ -59,12 +58,11 @@ class ShizukuService : IShizukuService.Stub() {
 
     /**
      * Starts continuous log collection, fanning one live `logcat` into two rotating streams named
-     * `verbose_<timestamp>.log` (every line) and `framework_<timestamp>.log`. A line joins the
-     * framework stream when it comes from a relevant uid (a patched app or a module — the manager
-     * itself only for its own tags or a warning, since its UI process emits the platform's whole
-     * rendering chatter —
-     * [relevantUids], resolved by the caller) or is an AndroidRuntime warning/error or any fatal
-     * line. Timestamped names sort chronologically by name, so no meaningless numeric suffixes.
+     * `verbose_<timestamp>.log` (every line) and `framework_<timestamp>.log`. A line joins the framework stream when it
+     * comes from a relevant uid (a patched app or a module — the manager itself only for its own tags or a warning,
+     * since its UI process emits the platform's whole rendering chatter — [relevantUids], resolved by the caller) or is
+     * an AndroidRuntime warning/error or any fatal line. Timestamped names sort chronologically by name, so no
+     * meaningless numeric suffixes.
      */
     override fun startLogCollector(logDir: String, relevantUids: IntArray): Boolean {
         return try {
@@ -90,10 +88,14 @@ class ShizukuService : IShizukuService.Stub() {
             val builder =
                 ProcessBuilder(
                     "logcat",
-                    "-b", "main",
-                    "-b", "crash",
-                    "-b", "system",
-                    "-v", "threadtime",
+                    "-b",
+                    "main",
+                    "-b",
+                    "crash",
+                    "-b",
+                    "system",
+                    "-v",
+                    "threadtime",
                 )
             builder.redirectErrorStream(true)
             val process = builder.start()
@@ -115,9 +117,9 @@ class ShizukuService : IShizukuService.Stub() {
     }
 
     /**
-     * Drains the collector's output and fans each line into the verbose stream (always) and the
-     * framework stream (when relevant). A wrapped multi-line message has no threadtime header on its
-     * continuation lines, so those inherit the routing of the entry they belong to.
+     * Drains the collector's output and fans each line into the verbose stream (always) and the framework stream (when
+     * relevant). A wrapped multi-line message has no threadtime header on its continuation lines, so those inherit the
+     * routing of the entry they belong to.
      */
     private fun runReader(process: Process, logDir: String, relevantUids: Set<Int>, myUid: Int) {
         val verbose = RotatingWriter(logDir, "verbose")
@@ -153,9 +155,7 @@ class ShizukuService : IShizukuService.Stub() {
                             uid == myUid -> tag in OWN_TAGS || level == 'W' || level == 'E' || level == 'F'
                             // A patched app or a module: everything it says is the point.
                             uid in relevantUids -> true
-                            else ->
-                                (tag == "AndroidRuntime" && (level == 'W' || level == 'E')) ||
-                                    level == 'F'
+                            else -> (tag == "AndroidRuntime" && (level == 'W' || level == 'E')) || level == 'F'
                         }
                     } else {
                         lastWentToFramework
@@ -174,10 +174,10 @@ class ShizukuService : IShizukuService.Stub() {
     /**
      * LSPatch's own log tags.
      *
-     * Listed rather than matched by prefix because they do not share one -- they are class names --
-     * and a prefix rule would either miss most of them or catch the platform's. Anything the manager
-     * logs at WARN or above is kept regardless, so a tag missing from here still cannot hide a
-     * problem; it only affects which of its *informational* lines reach the framework stream.
+     * Listed rather than matched by prefix because they do not share one -- they are class names -- and a prefix rule
+     * would either miss most of them or catch the platform's. Anything the manager logs at WARN or above is kept
+     * regardless, so a tag missing from here still cannot hide a problem; it only affects which of its *informational*
+     * lines reach the framework stream.
      */
     private val OWN_TAGS =
         setOf(
@@ -213,8 +213,7 @@ class ShizukuService : IShizukuService.Stub() {
             status.bufferedReader().useLines { lines ->
                 for (l in lines) {
                     if (l.startsWith("Uid:")) {
-                        return l.substringAfter("Uid:").trim().split(Regex("\\s+")).firstOrNull()
-                            ?.toIntOrNull() ?: -1
+                        return l.substringAfter("Uid:").trim().split(Regex("\\s+")).firstOrNull()?.toIntOrNull() ?: -1
                     }
                 }
             }
@@ -253,10 +252,7 @@ class ShizukuService : IShizukuService.Stub() {
             val files = dir.listFiles { f -> pattern.matches(f.name) } ?: return emptyArray()
             // The names carry a timestamp, so lexicographic order is chronological: oldest first,
             // the live part last — the order the reader pages through.
-            files
-                .sortedBy { it.name }
-                .map { "${it.absolutePath}\t${it.length()}" }
-                .toTypedArray()
+            files.sortedBy { it.name }.map { "${it.absolutePath}\t${it.length()}" }.toTypedArray()
         } catch (e: Exception) {
             emptyArray()
         }
@@ -288,9 +284,9 @@ class ShizukuService : IShizukuService.Stub() {
     }
 
     /**
-     * A rotating writer for one stream. Lines append to `<prefix>_<timestamp>.log` until it exceeds
-     * [MAX_PART_BYTES]; then it opens a fresh timestamped part and prunes the oldest so at most
-     * [MAX_PARTS] survive per prefix. Not thread-safe — one writer per reader thread.
+     * A rotating writer for one stream. Lines append to `<prefix>_<timestamp>.log` until it exceeds [MAX_PART_BYTES];
+     * then it opens a fresh timestamped part and prunes the oldest so at most [MAX_PARTS] survive per prefix. Not
+     * thread-safe — one writer per reader thread.
      */
     private class RotatingWriter(private val dir: String, private val prefix: String) {
         private var writer: BufferedWriter? = null
@@ -312,7 +308,10 @@ class ShizukuService : IShizukuService.Stub() {
         }
 
         private fun openNew() {
-            runCatching { writer?.flush(); writer?.close() }
+            runCatching {
+                writer?.flush()
+                writer?.close()
+            }
             prune()
             val file = File(dir, "${prefix}_${stamp()}.log")
             writer = BufferedWriter(FileWriter(file, false))
@@ -324,7 +323,8 @@ class ShizukuService : IShizukuService.Stub() {
             val pattern = Regex("""^${Regex.escape(prefix)}_.*\.log$""")
             val files = File(dir).listFiles { f -> pattern.matches(f.name) } ?: return
             // Keep room for the part about to be opened: drop oldest until at most MAX_PARTS-1 remain.
-            files.sortedBy { it.name }
+            files
+                .sortedBy { it.name }
                 .dropLast((MAX_PARTS - 1).coerceAtLeast(0))
                 .forEach { runCatching { it.delete() } }
         }
@@ -350,7 +350,10 @@ class ShizukuService : IShizukuService.Stub() {
         fun rotate() = openNew()
 
         fun close() {
-            runCatching { writer?.flush(); writer?.close() }
+            runCatching {
+                writer?.flush()
+                writer?.close()
+            }
             writer = null
         }
     }

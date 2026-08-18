@@ -15,12 +15,16 @@ ksp = "2.3.2"
 commons-io = "2.20.0"
 beust-jcommander = "1.82"
 google-gson = "2.13.1"
+spotless = "8.10.0"
+# Latest ktfmt; Kotlin is formatted in the same 4-space kotlinlang style the core (Vector) uses.
+ktfmt = "0.64"
 
 [plugins]
 google-devtools-ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 rikka-tools-refine = { id = "dev.rikka.tools.refine", version.ref = "hiddenapi" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+diffplug-spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 
 [libraries]
 androidx-customview = "androidx.customview:customview:1.2.0"

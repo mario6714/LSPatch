@@ -11,6 +11,7 @@ plugins {
     alias(libs.plugins.agp.app) apply false
     alias(lspatch.plugins.compose.compiler) apply false
     alias(lspatch.plugins.kotlin.android) apply false
+    alias(lspatch.plugins.diffplug.spotless) apply false
 }
 
 buildscript {
@@ -256,6 +257,30 @@ fun Project.configureBaseExtension() {
 }
 
 subprojects {
+    // :apkzlib is vendored Google code (com.android.tools.build.apkzlib) -- keep its upstream
+    // style, don't subject it to our formatter.
+    if (name != "apkzlib") {
+        apply(plugin = "com.diffplug.spotless")
+        extensions.configure<com.diffplug.gradle.spotless.SpotlessExtension> {
+            // Adopt formatting without a mass reflow: ratchet formats only files that differ from
+            // the baseline, so the never-formatted tree converges as it is touched rather than in
+            // one sweeping commit. A clean checkout has nothing to format; only changed files are
+            // enforced.
+            ratchetFrom("origin/master")
+            kotlin {
+                target("src/**/*.kt")
+                // The core (Vector) formats Kotlin with ktfmt in kotlinlang (4-space) style; match
+                // it, but widen to 120 cols so the repo's existing long lines are not rewrapped --
+                // that keeps each ratcheted file's diff to the real change, not a width reflow.
+                ktfmt(lspatch.versions.ktfmt.get()).kotlinlangStyle().configure { it.setMaxWidth(120) }
+            }
+            java {
+                target("src/**/*.java")
+                // 4-space, 120-col -- closest to the hand-written Java already in the tree.
+                palantirJavaFormat()
+            }
+        }
+    }
     plugins.withId("com.android.application") {
         configureBaseExtension()
     }
