@@ -21,7 +21,6 @@
     <string name="manage_no_match">일치 항목 없음</string>
     <string name="manage_loading">불러오는 중</string>
     <string name="manage_no_apps">아직 패치된 앱이 없습니다</string>
-    <string name="manage_rolling">되돌리는 중</string>
     <string name="manage_update_loader">로더 업데이트</string>
     <string name="manage_optimize">재최적화</string>
     <string name="manage_optimize_successfully">재최적화되었습니다. 인라인 처리되어 사라졌던 후크가 이제 작동합니다.</string>
@@ -65,7 +64,6 @@
     <string name="patch_install_hint_shizuku">Shizuku를 통해 자동으로 설치할 준비가 되었습니다.</string>
     <string name="patch_install_hint_system">설치할 준비가 되었습니다. 시스템에서 확인을 요청합니다.</string>
     <string name="patch_section_options">옵션</string>
-    <string name="patch_section_signing">서명 및 로깅</string>
     <string name="patch_status_patching">패치 중…</string>
     <string name="patch_status_error">패치 실패</string>
     <string name="patch_status_error_desc">문제가 발생했습니다. 로그를 복사하여 자세한 내용을 확인하세요.</string>
@@ -76,12 +74,10 @@
     <string name="settings_keystore">서명 키스토어</string>
     <string name="settings_keystore_default">내장</string>
     <string name="settings_keystore_custom">사용자 지정</string>
-    <string name="settings_keystore_dialog_title">사용자 지정 키스토어</string>
     <string name="settings_keystore_file">키스토어 파일</string>
     <string name="settings_keystore_password">비밀번호</string>
     <string name="settings_keystore_alias">별칭</string>
     <string name="settings_keystore_alias_password">별칭 비밀번호</string>
-    <string name="settings_keystore_desc">키스토어 설정 (BKS)</string>
     <string name="settings_keystore_wrong_keystore">잘못된 키스토어 유형</string>
     <string name="settings_keystore_wrong_password">잘못된 키스토어 비밀번호</string>
     <string name="settings_keystore_wrong_alias">잘못된 별칭 이름</string>
@@ -133,7 +129,6 @@
     <string name="patch_aspect_runs_integrated">관리자 유무와 상관없이 모든 기기</string>
     <string name="patch_local_summary">관리자가 이 앱의 모듈을 제공합니다</string>
     <string name="patch_integrated_summary">모듈이 APK에 내장됩니다</string>
-    <string name="patch_section_manifest">매니페스트</string>
     <string name="patch_manifest_version_code">버전 코드</string>
     <string name="patch_manifest_version_code_hint">비워 두면 원래 값을 유지합니다</string>
     <string name="patch_manifest_label">앱 이름</string>
@@ -206,7 +201,6 @@
     <string name="patch_export_running">내보내는 중…</string>
     <string name="patch_export_done">내보냄</string>
     <string name="patch_export_failed">내보내기 실패</string>
-    <string name="appdetail_mode">패치 모드</string>
     <string name="appdetail_modules">모듈</string>
     <string name="appdetail_actions">작업</string>
     <string name="appdetail_info">상세 정보</string>

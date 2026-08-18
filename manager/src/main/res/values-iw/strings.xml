@@ -21,7 +21,6 @@
     <string name="manage_no_match">אין התאמה</string>
     <string name="manage_loading">טוען</string>
     <string name="manage_no_apps">אין עדיין אפליקציות עם טלאי</string>
-    <string name="manage_rolling">מבצע</string>
     <string name="manage_update_loader">עדכן טוען</string>
     <string name="manage_optimize">בצע אופטימיזציה מחדש</string>
     <string name="manage_optimize_successfully">בוצעה אופטימיזציה מחדש. הוקים שהוסרו על ידי inlining אמורים לעבוד עכשיו.</string>
@@ -65,7 +64,6 @@
     <string name="patch_install_hint_shizuku">מוכן להתקנה שקטה באמצעות Shizuku.</string>
     <string name="patch_install_hint_system">מוכן להתקנה. המערכת תבקש ממך אישור.</string>
     <string name="patch_section_options">אפשרויות</string>
-    <string name="patch_section_signing">חתימה ורישום יומן</string>
     <string name="patch_status_patching">מחיל טלאי…</string>
     <string name="patch_status_error">הטלאי נכשל</string>
     <string name="patch_status_error_desc">משהו השתבש. העתק את היומן כדי לראות את הפרטים.</string>
@@ -76,12 +74,10 @@
     <string name="settings_keystore">מאגר מפתחות לחתימה</string>
     <string name="settings_keystore_default">מובנה</string>
     <string name="settings_keystore_custom">מותאם אישית</string>
-    <string name="settings_keystore_dialog_title">מאגר מפתחות מותאם אישית</string>
     <string name="settings_keystore_file">קובץ מאגר מפתחות</string>
     <string name="settings_keystore_password">סיסמה</string>
     <string name="settings_keystore_alias">כינוי</string>
     <string name="settings_keystore_alias_password">סיסמת כינוי</string>
-    <string name="settings_keystore_desc">הגדר מאגר מפתחות (BKS)</string>
     <string name="settings_keystore_wrong_keystore">סוג מאגר מפתחות שגוי</string>
     <string name="settings_keystore_wrong_password">סיסמת מאגר מפתחות שגויה</string>
     <string name="settings_keystore_wrong_alias">שם כינוי שגוי</string>
@@ -133,7 +129,6 @@
     <string name="patch_aspect_runs_integrated">כל מכשיר, עם המנהל או בלעדיו</string>
     <string name="patch_local_summary">המנהל מספק את המודולים של האפליקציה הזו</string>
     <string name="patch_integrated_summary">המודולים מוטמעים ב-APK</string>
-    <string name="patch_section_manifest">מניפסט</string>
     <string name="patch_manifest_version_code">קוד גרסה</string>
     <string name="patch_manifest_version_code_hint">יש להשאיר ריק כדי לשמור על המקורי</string>
     <string name="patch_manifest_label">שם האפליקציה</string>
@@ -206,7 +201,6 @@
     <string name="patch_export_running">מייצא…</string>
     <string name="patch_export_done">הייצוא הושלם</string>
     <string name="patch_export_failed">הייצוא נכשל</string>
-    <string name="appdetail_mode">מצב טלאי</string>
     <string name="appdetail_modules">מודולים</string>
     <string name="appdetail_actions">פעולות</string>
     <string name="appdetail_info">פרטים</string>

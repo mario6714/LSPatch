@@ -21,7 +21,6 @@
     <string name="manage_no_match">موردی یافت نشد</string>
     <string name="manage_loading">در حال بارگذاری</string>
     <string name="manage_no_apps">هنوز برنامه پچ‌شده‌ای وجود ندارد</string>
-    <string name="manage_rolling">در حال بازگردانی</string>
     <string name="manage_update_loader">به‌روزرسانی loader</string>
     <string name="manage_optimize">بهینه‌سازی مجدد</string>
     <string name="manage_optimize_successfully">بهینه‌سازی مجدد انجام شد. هوک‌هایی که به دلیل inline شدن حذف شده بودند اکنون باید کار کنند.</string>
@@ -65,7 +64,6 @@
     <string name="patch_install_hint_shizuku">آماده نصب بی‌صدا از طریق Shizuku.</string>
     <string name="patch_install_hint_system">آماده نصب. سیستم شما از شما تأیید می‌خواهد.</string>
     <string name="patch_section_options">گزینه‌ها</string>
-    <string name="patch_section_signing">امضا &amp; ثبت لاگ</string>
     <string name="patch_status_patching">در حال پچ…</string>
     <string name="patch_status_error">پچ ناموفق بود</string>
     <string name="patch_status_error_desc">مشکلی پیش آمد. برای دیدن جزئیات، لاگ را کپی کنید.</string>
@@ -76,12 +74,10 @@
     <string name="settings_keystore">keystore امضا</string>
     <string name="settings_keystore_default">داخلی</string>
     <string name="settings_keystore_custom">سفارشی</string>
-    <string name="settings_keystore_dialog_title">keystore سفارشی</string>
     <string name="settings_keystore_file">فایل keystore</string>
     <string name="settings_keystore_password">گذرواژه</string>
     <string name="settings_keystore_alias">نام مستعار</string>
     <string name="settings_keystore_alias_password">گذرواژه نام مستعار</string>
-    <string name="settings_keystore_desc">تنظیم keystore (BKS)</string>
     <string name="settings_keystore_wrong_keystore">نوع نادرست keystore</string>
     <string name="settings_keystore_wrong_password">گذرواژه نادرست keystore</string>
     <string name="settings_keystore_wrong_alias">نام مستعار نادرست</string>
@@ -133,7 +129,6 @@
     <string name="patch_aspect_runs_integrated">هر دستگاهی، با یا بدون manager</string>
     <string name="patch_local_summary">manager ماژول‌های این برنامه را ارائه می‌کند</string>
     <string name="patch_integrated_summary">ماژول‌ها درون APK تعبیه می‌شوند</string>
-    <string name="patch_section_manifest">مانیفست</string>
     <string name="patch_manifest_version_code">کد نسخه</string>
     <string name="patch_manifest_version_code_hint">برای حفظ مقدار اصلی خالی بگذارید</string>
     <string name="patch_manifest_label">نام برنامه</string>
@@ -206,7 +201,6 @@
     <string name="patch_export_running">در حال برون‌بری…</string>
     <string name="patch_export_done">برون‌بری شد</string>
     <string name="patch_export_failed">برون‌بری ناموفق بود</string>
-    <string name="appdetail_mode">حالت پچ</string>
     <string name="appdetail_modules">ماژول‌ها</string>
     <string name="appdetail_actions">عملیات</string>
     <string name="appdetail_info">جزئیات</string>

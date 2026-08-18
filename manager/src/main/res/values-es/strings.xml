@@ -21,7 +21,6 @@
     <string name="manage_no_match">Sin coincidencias</string>
     <string name="manage_loading">Cargando</string>
     <string name="manage_no_apps">Aún no hay aplicaciones parcheadas</string>
-    <string name="manage_rolling">Revirtiendo</string>
     <string name="manage_update_loader">Actualizar cargador</string>
     <string name="manage_optimize">Reoptimizar</string>
     <string name="manage_optimize_successfully">Reoptimizado. Los hooks que se habían insertado en línea deberían funcionar ahora.</string>
@@ -65,7 +64,6 @@
     <string name="patch_install_hint_shizuku">Listo para instalar silenciosamente a través de Shizuku.</string>
     <string name="patch_install_hint_system">Listo para instalar. Tu sistema te pedirá confirmación.</string>
     <string name="patch_section_options">Opciones</string>
-    <string name="patch_section_signing">Firma y registro</string>
     <string name="patch_status_patching">Parcheando…</string>
     <string name="patch_status_error">Error en el parcheo</string>
     <string name="patch_status_error_desc">Algo salió mal. Copia el registro para ver los detalles.</string>
@@ -76,12 +74,10 @@
     <string name="settings_keystore">Almacén de claves de firma</string>
     <string name="settings_keystore_default">Integrado</string>
     <string name="settings_keystore_custom">Personalizado</string>
-    <string name="settings_keystore_dialog_title">Almacén de claves personalizado</string>
     <string name="settings_keystore_file">Archivo del almacén de claves</string>
     <string name="settings_keystore_password">Contraseña</string>
     <string name="settings_keystore_alias">Alias</string>
     <string name="settings_keystore_alias_password">Contraseña del alias</string>
-    <string name="settings_keystore_desc">Establecer almacén de claves (BKS)</string>
     <string name="settings_keystore_wrong_keystore">Tipo de almacén de claves incorrecto</string>
     <string name="settings_keystore_wrong_password">Contraseña del almacén de claves incorrecta</string>
     <string name="settings_keystore_wrong_alias">Nombre de alias incorrecto</string>
@@ -133,7 +129,6 @@
     <string name="patch_aspect_runs_integrated">Cualquier dispositivo, con o sin el gestor</string>
     <string name="patch_local_summary">El gestor proporciona los módulos de esta aplicación</string>
     <string name="patch_integrated_summary">Los módulos se incorporan en el APK</string>
-    <string name="patch_section_manifest">Manifiesto</string>
     <string name="patch_manifest_version_code">Código de versión</string>
     <string name="patch_manifest_version_code_hint">Déjalo en blanco para conservar el original</string>
     <string name="patch_manifest_label">Nombre de la aplicación</string>
@@ -206,7 +201,6 @@
     <string name="patch_export_running">Exportando…</string>
     <string name="patch_export_done">Exportado</string>
     <string name="patch_export_failed">Error al exportar</string>
-    <string name="appdetail_mode">Modo de parcheo</string>
     <string name="appdetail_modules">Módulos</string>
     <string name="appdetail_actions">Acciones</string>
     <string name="appdetail_info">Detalles</string>

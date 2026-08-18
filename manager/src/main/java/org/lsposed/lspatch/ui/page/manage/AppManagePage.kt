@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -32,6 +33,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -47,7 +49,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import kotlinx.coroutines.launch
 import org.lsposed.lspatch.R
-import org.lsposed.lspatch.data.model.PatchStep
 import org.lsposed.lspatch.data.repository.PatchJobHost
 import org.lsposed.lspatch.lspApp
 import org.lsposed.lspatch.share.Constants
@@ -61,10 +62,33 @@ import org.lsposed.lspatch.ui.viewmodel.manage.AppManageViewModel
 import org.lsposed.lspatch.ui.viewstate.ProcessingState
 import org.lsposed.lspatch.util.LSPPackageManager
 import org.lsposed.lspatch.util.ShizukuApi
-import org.matrix.vector.ui.ApiBadge
 import org.matrix.vector.ui.ModuleRow
 import org.matrix.vector.ui.PanelEmptyState
 import org.matrix.vector.ui.REACH_ICON_SIZE
+
+/**
+ * A quiet tinted pill for a fact the row carries on its bottom band, such as the patch mode or the loader version.
+ *
+ * Shared by every such fact rather than restyled per caller: they sit next to each other on one line, where a
+ * difference in shape or weight reads as a difference in kind. The tint is the caller's, so what the pill says is still
+ * told apart by colour.
+ */
+@Composable
+private fun RowPill(text: String, color: Color) {
+    Box(
+        modifier =
+            Modifier.clip(RoundedCornerShape(6.dp))
+                .background(color.copy(alpha = 0.15f))
+                .padding(horizontal = 6.dp, vertical = 1.dp)
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = color,
+        )
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,7 +102,8 @@ fun AppManageBody(navigator: DestinationsNavigator, query: String) {
     val step by PatchJobHost.step.collectAsStateWithLifecycle()
 
     when (val state = viewModel.optimizeState) {
-        is ProcessingState.Idle, is ProcessingState.Processing -> Unit
+        is ProcessingState.Idle,
+        is ProcessingState.Processing -> Unit
         is ProcessingState.Done -> {
             val optimizeSucceed = stringResource(R.string.manage_optimize_successfully)
             val optimizeFailed = stringResource(R.string.manage_optimize_failed)
@@ -90,10 +115,11 @@ fun AppManageBody(navigator: DestinationsNavigator, query: String) {
                 // restart is offered rather than done, because force-stopping an app the user is in
                 // the middle of using is not a side effect to spring on them.
                 val target = viewModel.lastOptimized
-                val result = snackbarHost.showSnackbar(
-                    message = if (state.result) optimizeSucceed else optimizeFailed,
-                    actionLabel = if (state.result && target != null) forceStop else null,
-                )
+                val result =
+                    snackbarHost.showSnackbar(
+                        message = if (state.result) optimizeSucceed else optimizeFailed,
+                        actionLabel = if (state.result && target != null) forceStop else null,
+                    )
                 if (result == SnackbarResult.ActionPerformed && target != null) {
                     ShizukuApi.runShellCommand("am force-stop $target")
                     snackbarHost.showSnackbar(stopped)
@@ -124,11 +150,12 @@ fun AppManageBody(navigator: DestinationsNavigator, query: String) {
             return@Column
         }
 
-        val shown = viewModel.appList.filter {
-            query.isBlank() ||
-                it.first.label.contains(query, true) ||
-                it.first.app.packageName.contains(query, true)
-        }
+        val shown =
+            viewModel.appList.filter {
+                query.isBlank() ||
+                    it.first.label.contains(query, true) ||
+                    it.first.app.packageName.contains(query, true)
+            }
         if (shown.isEmpty()) {
             PanelEmptyState(
                 icon = Icons.Rounded.SearchOff,
@@ -154,19 +181,18 @@ fun AppManageBody(navigator: DestinationsNavigator, query: String) {
                 items(items = shown, key = { it.first.app.packageName }) { item ->
                     val (appInfo, config) = item
                     val local = config.useManager
-                    // The loader version is unified on the commit count. A rolling manager-backed loader
-                    // has no fixed commit to show, so it reads "Rolling"; anything older than this build's
-                    // loader carries the update mark and is upgraded from the detail page.
+                    // The loader version is unified on the commit count: only a pinned loader older
+                    // than this build's can be updated, and it carries the update mark to say so.
                     val isRolling = local && config.lspConfig.VERSION_CODE >= Constants.MIN_ROLLING_VERSION_CODE
                     val hasUpdate = !isRolling && config.lspConfig.VERSION_CODE < LSPConfig.instance.VERSION_CODE
-                    val loaderValue =
-                        if (isRolling) stringResource(R.string.manage_rolling)
-                        else config.lspConfig.VERSION_CODE.toString()
-                    val appVersion = remember(appInfo.app.packageName) {
-                        runCatching {
-                            lspApp.packageManager.getPackageInfo(appInfo.app.packageName, 0).versionName
-                        }.getOrNull().orEmpty()
-                    }
+                    val appVersion =
+                        remember(appInfo.app.packageName) {
+                            runCatching {
+                                lspApp.packageManager.getPackageInfo(appInfo.app.packageName, 0).versionName
+                            }
+                                .getOrNull()
+                                .orEmpty()
+                        }
                     val moduleIcons = viewModel.moduleIcons[appInfo.app.packageName].orEmpty()
                     ModuleRow(
                         name = appInfo.label,
@@ -180,7 +206,10 @@ fun AppManageBody(navigator: DestinationsNavigator, query: String) {
                                 modifier = Modifier.fillMaxSize(),
                             )
                         },
-                        apiBadge = { ApiBadge(label = "Loader", value = loaderValue) },
+                        // No badge under the icon: the only number an app row has to show is its
+                        // loader version, and that belongs beside the mode it depends on rather than
+                        // under the icon, where a value wider than the icon shifted the whole row.
+                        apiBadge = {},
                         hasUpdate = hasUpdate,
                         // Tap opens the page; long press opens the quick actions. The icon is the
                         // same target as the row, but carries no long press of its own -- it is a
@@ -213,35 +242,46 @@ fun AppManageBody(navigator: DestinationsNavigator, query: String) {
                         // Integrated (modules baked in), the one distinction that changes how the app
                         // is managed. On the band rather than a line of its own, so the row is compact.
                         reachStart = {
-                            val modeColor =
-                                if (local) MaterialTheme.colorScheme.secondary
-                                else MaterialTheme.colorScheme.tertiary
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(modeColor.copy(alpha = 0.15f))
-                                    .padding(horizontal = 6.dp, vertical = 1.dp)
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text(
-                                    text = stringResource(if (local) R.string.patch_local else R.string.patch_integrated),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = modeColor,
+                                RowPill(
+                                    text =
+                                        stringResource(if (local) R.string.patch_local else R.string.patch_integrated),
+                                    color =
+                                        if (local) MaterialTheme.colorScheme.secondary
+                                        else MaterialTheme.colorScheme.tertiary,
                                 )
+                                // Only an embedded loader has a version worth naming: a manager-backed
+                                // patch reads its loader out of the installed manager at every start, so
+                                // the number baked in at patch time is not the one that runs, and naming
+                                // it would date the app by a build it does not use. Next to the mode
+                                // because it is the mode that decides whether the number means anything.
+                                if (!local) {
+                                    RowPill(
+                                        text =
+                                            stringResource(R.string.appdetail_info_loader) +
+                                                " " +
+                                                config.lspConfig.VERSION_CODE,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
                             }
                         },
                         // The modules this app reaches, as thumbnails then "+N". Handed to the row as data —
                         // the row draws it bottom-right itself, the same corner a module's scope lands in,
                         // so neither side is positioned by hand here.
-                        reachIcons = moduleIcons.map { bitmap ->
-                            {
-                                Image(
-                                    bitmap = bitmap,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(REACH_ICON_SIZE),
-                                )
-                            }
-                        },
+                        reachIcons =
+                            moduleIcons.map { bitmap ->
+                                {
+                                    Image(
+                                        bitmap = bitmap,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(REACH_ICON_SIZE),
+                                    )
+                                }
+                            },
                         reachCount = moduleIcons.size,
                     )
                     HorizontalDivider(
@@ -261,9 +301,9 @@ fun AppManageBody(navigator: DestinationsNavigator, query: String) {
 /**
  * Starts a patch -- the same call Home's button makes.
  *
- * It used to demand a storage folder before it would do anything, take a persistable permission on
- * it, and then offer a choice between an app and a file. Home did none of that, which is precisely
- * why a patch begun there had nowhere to write and failed every time.
+ * It used to demand a storage folder before it would do anything, take a persistable permission on it, and then offer a
+ * choice between an app and a file. Home did none of that, which is precisely why a patch begun there had nowhere to
+ * write and failed every time.
  */
 @Composable
 fun AppManageFab(navigator: DestinationsNavigator) {

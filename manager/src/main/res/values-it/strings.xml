@@ -21,7 +21,6 @@
     <string name="manage_no_match">Nessuna corrispondenza</string>
     <string name="manage_loading">Caricamento</string>
     <string name="manage_no_apps">Nessuna app con patch</string>
-    <string name="manage_rolling">In corso</string>
     <string name="manage_update_loader">Aggiorna loader</string>
     <string name="manage_optimize">Ri-ottimizza</string>
     <string name="manage_optimize_successfully">Ri-ottimizzato. Gli hook rimossi dall\'inlining ora dovrebbero funzionare.</string>
@@ -65,7 +64,6 @@
     <string name="patch_install_hint_shizuku">Pronto per l\'installazione silenziosa tramite Shizuku.</string>
     <string name="patch_install_hint_system">Pronto per l\'installazione. Il sistema ti chiederà conferma.</string>
     <string name="patch_section_options">Opzioni</string>
-    <string name="patch_section_signing">Firma e log</string>
     <string name="patch_status_patching">Applicazione patch…</string>
     <string name="patch_status_error">Patch non riuscita</string>
     <string name="patch_status_error_desc">Qualcosa è andato storto. Copia il log per vedere i dettagli.</string>
@@ -76,12 +74,10 @@
     <string name="settings_keystore">Keystore firma</string>
     <string name="settings_keystore_default">Integrato</string>
     <string name="settings_keystore_custom">Personalizzato</string>
-    <string name="settings_keystore_dialog_title">Keystore personalizzato</string>
     <string name="settings_keystore_file">File keystore</string>
     <string name="settings_keystore_password">Password</string>
     <string name="settings_keystore_alias">Alias</string>
     <string name="settings_keystore_alias_password">Password alias</string>
-    <string name="settings_keystore_desc">Imposta keystore (BKS)</string>
     <string name="settings_keystore_wrong_keystore">Tipo di keystore errato</string>
     <string name="settings_keystore_wrong_password">Password del keystore errata</string>
     <string name="settings_keystore_wrong_alias">Nome alias errato</string>
@@ -133,7 +129,6 @@
     <string name="patch_aspect_runs_integrated">Qualsiasi dispositivo, con o senza il gestore</string>
     <string name="patch_local_summary">Il gestore fornisce i moduli di questa app</string>
     <string name="patch_integrated_summary">I moduli sono incorporati nell\'APK</string>
-    <string name="patch_section_manifest">Manifest</string>
     <string name="patch_manifest_version_code">Codice versione</string>
     <string name="patch_manifest_version_code_hint">Lascia vuoto per mantenere l\'originale</string>
     <string name="patch_manifest_label">Nome dell\'app</string>
@@ -206,7 +201,6 @@
     <string name="patch_export_running">Esportazione…</string>
     <string name="patch_export_done">Esportato</string>
     <string name="patch_export_failed">Esportazione non riuscita</string>
-    <string name="appdetail_mode">Modalità di patch</string>
     <string name="appdetail_modules">Moduli</string>
     <string name="appdetail_actions">Azioni</string>
     <string name="appdetail_info">Dettagli</string>
