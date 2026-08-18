@@ -1,8 +1,10 @@
 package org.lsposed.lspatch.data.repository
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import androidx.core.net.toUri
 import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -54,13 +56,36 @@ class LSPLogSource(private val context: Context) : LogSource {
     private val _tracesInline = MutableStateFlow(true)
     override val tracesInline: StateFlow<Boolean> = _tracesInline.asStateFlow()
 
+    /**
+     * Only while the shell can read the device log.
+     *
+     * Without it the screen shows this process's own log, which logcat hands over unrotated and whole — there are no
+     * parts to page through, and the verbose stream would be the same lines again, so the unfold control goes with
+     * them.
+     */
+    override val hasVerboseStream: Boolean
+        get() = ShizukuApi.isPermissionGranted
+
     override suspend fun parts(verbose: Boolean): List<String> =
+        if (!ShizukuApi.isPermissionGranted) emptyList()
+        else
         // Both streams are collected and rotated on disk now, so both page through real parts: the
         // verbose stream is every line, the framework stream is the uid/crash-routed subset the
         // collector wrote separately (see [ShizukuService]).
         ShizukuApi.listLogParts(LogCollectorService.LOG_DIR, streamPrefix(verbose)).map { it.first }
 
     override suspend fun open(verbose: Boolean, part: String?): Result<LogContent?> {
+        // The fallback: an app may always read its own process's log, so a manager without Shizuku
+        // is not blind — it just cannot see past itself. Worth more than an empty screen exactly
+        // when something is wrong, since a Shizuku that will not start is the case where the
+        // manager's own lines are the only account of why.
+        if (!ShizukuApi.refresh()) {
+            val own =
+                withContext(Dispatchers.IO) { ownProcessLog() }
+                    ?: return Result.failure(IOException("the device log is not readable without Shizuku"))
+            val entries = withContext(Dispatchers.Default) { parseLogcat(own).mapIndexed { i, e -> e.copy(index = i) } }
+            return Result.success(LogcatContent(entries))
+        }
         val prefix = streamPrefix(verbose)
         val raw =
             withContext(Dispatchers.IO) {
@@ -134,6 +159,30 @@ class LSPLogSource(private val context: Context) : LogSource {
                     zip.closeEntry()
                 }
 
+                // A shell-side file copied whole into the archive, a chunk at a time.
+                //
+                // Reading it in one call cannot work — the Binder transaction limit truncates it —
+                // and truncation here is not a smaller report but a wrong one: the head of a
+                // tombstone is the crash (process, signal, backtrace) and the head of a log part is
+                // everything that led to the failure being reported. The entry is opened only once
+                // the first chunk arrives, so an unreadable file leaves no empty entry behind.
+                suspend fun shellFileEntry(name: String, path: String) {
+                    var offset = 0L
+                    var opened = false
+                    while (true) {
+                        val chunk = ShizukuApi.readFileChunk(path, offset, CHUNK_BYTES) ?: break
+                        if (chunk.isEmpty()) break
+                        if (!opened) {
+                            zip.putNextEntry(ZipEntry(name))
+                            opened = true
+                        }
+                        zip.write(chunk)
+                        offset += chunk.size
+                        if (chunk.size < CHUNK_BYTES) break
+                    }
+                    if (opened) zip.closeEntry()
+                }
+
                 // A directory captured file-by-file into a zip folder, the way Vector's daemon
                 // addDir does it — one entry per file under [prefix], preserving the structure —
                 // rather than flattening everything into one blob. The shell lists and reads each
@@ -147,15 +196,37 @@ class LSPLogSource(private val context: Context) : LogSource {
                             .filter { it.isNotEmpty() }
                             .toList()
                     for (name in names) {
-                        entry("$prefix/$name", ShizukuApi.runShellScript("cat '$dir/$name' 2>/dev/null"))
+                        shellFileEntry("$prefix/$name", "$dir/$name")
                     }
                 }
 
+                // Asked once, so the archive is assembled against one answer: without the shell the
+                // entries that need it are skipped outright rather than each failing its way to a
+                // dialog that would tell the reader an export they just completed went wrong.
+                val shizuku = ShizukuApi.refresh()
+
                 entry("device.txt", deviceReport())
-                // First, and written by the app itself rather than through the shell: when Shizuku is the thing that
-                // is broken, every other entry below is empty, and this one is the whole report.
+                // First, and written by the app itself rather than through the shell: when Shizuku
+                // is the thing that is broken, every other entry below is empty, and this one is
+                // the whole report.
                 entry("shizuku.txt", shizukuReport())
                 entry("packages.txt", packageReport())
+                // Who, if anyone, can install an apk on this device. A silent install through the
+                // shell needs no installer app, but a session that asks for confirmation needs one
+                // to host the dialog, and the fallback through the platform installer needs one
+                // outright -- so a report about an install that would not go through has to say
+                // whether the device still has one.
+                entry("installers.txt", installerReport())
+                // The patch reports: the app's own account of every recent patch, install and
+                // restore, with the installer's status and message. For a report about an install
+                // that would not go through, this is the entry that answers the question — and the
+                // one the reader cannot fetch themselves, since it lives in app-private storage.
+                context.noBackupFilesDir
+                    .resolve("patch-logs")
+                    .listFiles()
+                    ?.sortedBy { it.name }
+                    ?.forEach { fileEntry("patch-reports/${it.name}", it) }
+
                 // A verbatim copy of the module/scope database (the app owns it, so no shell is
                 // needed), the way Vector's report ships modules_config.db. The -wal/-shm side
                 // files go too, so the copy can be replayed to the exact committed + pending state.
@@ -163,23 +234,35 @@ class LSPLogSource(private val context: Context) : LogSource {
                 fileEntry("database/${db.name}", db)
                 fileEntry("database/${db.name}-wal", File("${db.path}-wal"))
                 fileEntry("database/${db.name}-shm", File("${db.path}-shm"))
-                // Both streams' collected rotations, oldest first — the report's own history.
-                for (prefix in listOf("verbose", "framework")) {
-                    ShizukuApi.listLogParts(LogCollectorService.LOG_DIR, prefix).forEach { (path, _) ->
-                        entry("logs/${path.substringAfterLast('/')}", ShizukuApi.readLogPart(path, LIVE_MAX))
+                // Both streams' collected rotations, oldest first — the report's own history. With
+                // no shell there is no history to ship, so the archive carries what the screen is
+                // showing instead: this process's own log, which is the whole of what can be read.
+                // An export that silently dropped it would be a report about a broken Shizuku with
+                // none of the lines describing the breakage.
+                if (shizuku) {
+                    for (prefix in listOf("verbose", "framework")) {
+                        ShizukuApi.listLogParts(LogCollectorService.LOG_DIR, prefix).forEach { (path, _) ->
+                            shellFileEntry("logs/${path.substringAfterLast('/')}", path)
+                        }
                     }
+                } else {
+                    entry("logs/own-process.log", ownProcessLog())
                 }
                 // Native crash dumps, as their own folder. (ANR traces are omitted: /data/anr is
                 // not readable at the shell's rights — it needs a root dumpstate/bugreport.)
-                addDir("tombstones", "/data/tombstones")
+                if (shizuku) addDir("tombstones", "/data/tombstones")
                 // "self": the manager's own live process state, each file on its own like Vector's
-                // proc/<pid> folder, so a report shows what the app was doing.
-                val pid = android.os.Process.myPid()
-                entry("self/status", ShizukuApi.runShellScript("cat /proc/$pid/status 2>/dev/null"))
-                entry("self/cmdline", ShizukuApi.runShellScript("tr '\\0' ' ' < /proc/$pid/cmdline 2>/dev/null"))
-                entry("self/maps", ShizukuApi.runShellScript("cat /proc/$pid/maps 2>/dev/null"))
-                entry("getprop.txt", ShizukuApi.runShellCommand("getprop"))
-                entry("ps.txt", ShizukuApi.runShellCommand("ps -A -o PID,PPID,USER,NAME"))
+                // proc/<pid> folder, so a report shows what the app was doing. Read straight from
+                // /proc/self — a process may always read its own — rather than through the shell,
+                // which would make the most self-descriptive part of the report the first to vanish
+                // when the shell is what failed.
+                entry("self/status", readOwnProc("status"))
+                entry("self/cmdline", readOwnProc("cmdline")?.replace('\u0000', ' ')?.trim())
+                entry("self/maps", readOwnProc("maps"))
+                if (shizuku) {
+                    entry("getprop.txt", ShizukuApi.runShellCommand("getprop"))
+                    entry("ps.txt", ShizukuApi.runShellCommand("ps -A -o PID,PPID,USER,NAME"))
+                }
             }
         }
     }
@@ -221,6 +304,59 @@ class LSPLogSource(private val context: Context) : LogSource {
         }
     }
 
+    /**
+     * The device's install machinery, as the manager can see it without any privilege.
+     *
+     * Reads the platform's own answers -- what resolves an install intent, whether those packages are enabled, whether
+     * this app may request an install at all -- rather than assuming the stock installer is present. Replacing it is
+     * something people do.
+     */
+    private fun installerReport(): String {
+        val pm = context.packageManager
+        return buildString {
+            appendLine(
+                "Can request installs: " +
+                    runCatching { pm.canRequestPackageInstalls() }.getOrElse { "unknown (${it.javaClass.simpleName})" }
+            )
+            appendLine()
+            // Both schemes, because they do not resolve alike and the difference decides how an apk
+            // could be handed to another installer at all: an app-private file can only travel as a
+            // content uri, and a handler that registers only `file` cannot receive one.
+            for (action in listOf(Intent.ACTION_INSTALL_PACKAGE, Intent.ACTION_VIEW)) {
+                for (scheme in listOf("content://lspatch.example/apk", "file:///apk")) {
+                    appendLine("Handles ${action.substringAfterLast('.')} of $scheme:")
+                    appendLine(handlersOf(installIntent(action, scheme)))
+                }
+            }
+            appendLine("Known installer packages:")
+            for (name in KNOWN_INSTALLERS) appendLine("  $name: ${packageState(name)}")
+        }
+    }
+
+    private fun installIntent(action: String, uri: String): Intent =
+        Intent(action)
+            .setDataAndType(uri.toUri(), "application/vnd.android.package-archive")
+            .addCategory(Intent.CATEGORY_DEFAULT)
+
+    private fun handlersOf(intent: Intent): String = runCatching {
+        val handlers = context.packageManager.queryIntentActivities(intent, 0)
+        if (handlers.isEmpty()) "  (none)"
+        else
+            handlers.joinToString("\n") {
+                "  ${it.activityInfo.packageName}/${it.activityInfo.name} enabled=${it.activityInfo.enabled}"
+            }
+    }
+        .getOrElse { "  (query failed: $it)" }
+
+    /** Installed, enabled, and at what version -- or absent, which is the answer that matters here. */
+    private fun packageState(packageName: String): String = runCatching {
+        val pm = context.packageManager
+        val info = pm.getPackageInfo(packageName, 0)
+        val setting = pm.getApplicationEnabledSetting(packageName)
+        "installed ${info.versionName}, enabledSetting=$setting, appEnabled=${info.applicationInfo?.enabled}"
+    }
+        .getOrElse { "not installed" }
+
     /** Every patched app and module by package name, so a report names exactly what is in play. */
     private fun packageReport(): String {
         val modules = LSPPackageManager.appList.filter { it.isModule }
@@ -240,7 +376,9 @@ class LSPLogSource(private val context: Context) : LogSource {
     // streams and ran `logcat -c`, then restarted; the restart raced the wipe and framework collection
     // could come back empty (the reported "clear stops the framework log" bug). Starting a new part
     // keeps the collector running, so there is never a gap.
-    override val resetKind: LogResetKind = LogResetKind.ROTATE
+    // Rotation is the collector's, so it is offered only while there is a collector to ask.
+    override val resetKind: LogResetKind?
+        get() = if (ShizukuApi.isPermissionGranted) LogResetKind.ROTATE else null
 
     override suspend fun reset(verbose: Boolean): Boolean =
         withContext(Dispatchers.IO) {
@@ -269,16 +407,49 @@ class LSPLogSource(private val context: Context) : LogSource {
     /** The collector's file prefix for each stream — the two it fans logcat into. */
     private fun streamPrefix(verbose: Boolean): String = if (verbose) "verbose" else "framework"
 
+    /**
+     * This process's own log, read without any privilege.
+     *
+     * logcat hands an app the entries of its own uid and no others, so no permission is needed and none is asked for;
+     * `--pid` narrows that to this process. Run in-process rather than through the shell service, because the whole
+     * point is that the shell service is what is missing.
+     */
+    private fun ownProcessLog(): String? = runCatching {
+        val command = arrayOf("logcat", "-d", "-v", "threadtime", "--pid=${android.os.Process.myPid()}")
+        val process = Runtime.getRuntime().exec(command)
+        val text = process.inputStream.bufferedReader().use { it.readText() }
+        process.waitFor()
+        text.takeIf { it.isNotBlank() }
+    }
+        .getOrNull()
+
+    /** One of this process's own /proc files, or null when it cannot be read. */
+    private fun readOwnProc(name: String): String? = runCatching {
+        File("/proc/self/$name").readText().takeIf { it.isNotBlank() }
+    }
+        .getOrNull()
+
     private fun snapshotCommand(verbose: Boolean): String =
         if (verbose) "logcat -d -v threadtime -t 4000"
         else "logcat -d -b main -b crash -v threadtime -s $LOG_FILTERSPEC"
 
     private companion object {
-        /** Per-read tail cap, matching the shell service's own Binder-safe limit. */
+        /** Per-read tail cap for the screen, matching the shell service's own Binder-safe limit. */
         const val LIVE_MAX = 400_000
+
+        /** Export chunk size: comfortably inside one Binder transaction, few enough round trips. */
+        const val CHUNK_BYTES = 512 * 1024
 
         /** The Room database of modules and their scopes; copied into the export. */
         const val CONFIG_DB = "modules_config.db"
+
+        /** The stock installers, listed by name so the report says "absent" rather than saying nothing. */
+        val KNOWN_INSTALLERS =
+            listOf(
+                "com.android.packageinstaller",
+                "com.google.android.packageinstaller",
+                "com.android.permissioncontroller",
+            )
 
         // Filter for the one-shot fallback snapshot only: a chatty device pushes the sparse
         // framework/crash lines out of any recent `-t N` window, so the source-side tag filter keeps

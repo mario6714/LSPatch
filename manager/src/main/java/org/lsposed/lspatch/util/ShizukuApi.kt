@@ -518,6 +518,15 @@ object ShizukuApi {
     suspend fun readLogPart(path: String, maxChars: Int): String? =
         onService(ShizukuOp.Logs, null) { it.readLogPart(path, maxChars) }
 
+    /**
+     * One slice of a shell-side file, or null when the shell is unavailable.
+     *
+     * The tail-capped [readLogPart] is what a screen wants; an export wants the whole file, and the only way past the
+     * Binder transaction limit is to ask for it a piece at a time.
+     */
+    suspend fun readFileChunk(path: String, offset: Long, maxBytes: Int): ByteArray? =
+        onService(ShizukuOp.Logs, null) { it.readFileChunk(path, offset, maxBytes) }
+
     suspend fun performDexOptMode(packageName: String): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) { // API 34+
             return onService(ShizukuOp.Optimize, false) { service ->

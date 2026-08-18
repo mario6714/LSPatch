@@ -38,6 +38,12 @@ interface IShizukuService {
     // Reads a part file, keeping at most [maxChars] from the tail (the newest lines).
     String readLogPart(String path, int maxChars) = 7;
 
+    // Reads at most [maxBytes] from [path] starting at [offset], as bytes rather than text: a
+    // Binder transaction is capped around 1 MB, so anything worth exporting has to arrive in pieces,
+    // and a piece boundary that fell inside a multi-byte character would corrupt it. Returns an
+    // empty array at end of file or when the file cannot be read, which ends the caller's loop.
+    byte[] readFileChunk(String path, long offset, int maxBytes) = 10;
+
     // Starts a new log part on both streams without stopping the collector or deleting anything: the
     // current parts close and fresh ones open, so collection never has a gap. This is the rootless
     // equivalent of Vector's "start a new log". Returns false when no collector is running.

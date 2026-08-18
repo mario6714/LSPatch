@@ -321,6 +321,22 @@ class ShizukuService : IShizukuService.Stub() {
         }
     }
 
+    override fun readFileChunk(path: String, offset: Long, maxBytes: Int): ByteArray {
+        return try {
+            RandomAccessFile(File(path), "r").use { file ->
+                val remaining = file.length() - offset
+                if (remaining <= 0L) return ByteArray(0)
+                file.seek(offset)
+                val buffer = ByteArray(minOf(remaining, maxBytes.toLong()).toInt())
+                file.readFully(buffer)
+                buffer
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "readFileChunk failed: $path", e)
+            ByteArray(0)
+        }
+    }
+
     override fun destroy() {
         Log.i(TAG, "Shell service destroyed")
         stopLogCollector()
