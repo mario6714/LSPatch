@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.documentfile.provider.DocumentFile
 import dev.rikka.tools.refine.Refine
 import java.io.File
@@ -30,8 +31,11 @@ import java.util.*
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.parcelize.Parcelize
 import me.zhanghai.android.appiconloader.AppIconLoader
 import org.lsposed.lspatch.config.ConfigManager
@@ -47,6 +51,34 @@ object LSPPackageManager {
     private const val SETTINGS_CATEGORY = "de.robv.android.xposed.category.MODULE_SETTINGS"
 
     const val STATUS_USER_CANCELLED = -2
+
+    /**
+     * How long a *silent* installer action may run before its silence is taken as an answer.
+     *
+     * The bound is a compromise between two costs. Waiting minutes for a result that is not coming is time the reader
+     * spends watching a screen that will not change; giving up early ends an install that was still working, since a
+     * commit waits on verification performed by another application, whose duration is a property of the device rather
+     * than of the package. So the bound is generous rather than tight, and expiry is not read as failure on its own:
+     * the package manager is asked whether the package arrived anyway, so an install slower than the deadline is
+     * recognised rather than repeated.
+     */
+    private const val SILENT_ACTION_TIMEOUT_MS = 60_000L
+
+    private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
+
+    /**
+     * Asks the package manager to install without waiting on a verifier.
+     *
+     * Declared here because the hidden-api stubs do not carry it. It claims no privilege the session does not already
+     * hold: the service keeps it only for a session already marked as coming from the shell and allowing test packages,
+     * the first of which it sets itself for a shell caller, and strips it from every other caller.
+     *
+     * It is also narrower than it sounds. For a shell install the service honours the request only when the package is
+     * already installed and the artifact is debuggable; a first install -- which includes every install that had to
+     * remove a differently-signed predecessor -- is verified regardless. Only a device-wide setting covers that case,
+     * and that setting is the device's to hold, not this app's to change.
+     */
+    private const val INSTALL_DISABLE_VERIFICATION = 0x00080000
 
     private const val INSTALL_ACTION = "org.lsposed.lspatch.action.INSTALL_RESULT"
 
@@ -291,52 +323,270 @@ object LSPPackageManager {
                 if (apks.isEmpty()) throw IOException("No apk to install")
                 apks
                     .firstOrNull { !it.exists() || it.length() == 0L }
-                    ?.let {
-                        throw IOException("${it.name} is missing or empty")
-                    }
-                val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-                if (shizuku) {
-                    var flags = Refine.unsafeCast<SessionParamsHidden>(params).installFlags
-                    flags =
-                        flags or
-                            PackageManagerHidden.INSTALL_ALLOW_TEST or
-                            PackageManagerHidden.INSTALL_REPLACE_EXISTING
-                    Refine.unsafeCast<SessionParamsHidden>(params).installFlags = flags
-                    ShizukuApi.createPackageInstallerSession(params).use { session ->
-                        apks.forEach { apk -> session.writeApk(apk) }
-                        var result: Intent? = null
-                        suspendCoroutine { cont ->
-                            val adapter = IntentSenderHelper.IIntentSenderAdaptor { intent ->
-                                result = intent
-                                cont.resume(Unit)
+                    ?.let { throw IOException("${it.name} is missing or empty") }
+
+                // The silent path can end in three ways, and only two of them are answers: it
+                // succeeded, it failed for a stated reason, or it produced nothing -- because it said
+                // nothing, or because the channel carrying it gave out. Neither kind of nothing says
+                // anything about the apk, so it is retried through the installer the user can see
+                // rather than reported as a failure they cannot act on. A stated failure is not
+                // retried -- it is the answer.
+                val outcome =
+                    (if (shizuku) trySilentInstall(apks) else null)
+                        ?: run {
+                            if (shizuku) {
+                                Log.w(TAG, "The shell installer gave no answer; retrying with the platform installer")
                             }
-                            session.commit(IntentSenderHelper.newIntentSender(adapter))
+                            installThroughPlatform(apks)
                         }
-                        result?.let {
-                            status = it.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
-                            message = it.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
-                        } ?: throw IOException("Intent is null")
-                    }
-                } else {
-                    val installer = lspApp.packageManager.packageInstaller
-                    val sessionId = installer.createSession(params)
-                    installer.openSession(sessionId).use { session ->
-                        apks.forEach { apk -> session.writeApk(apk) }
-                        val result =
-                            awaitUserAction("$INSTALL_ACTION.$sessionId", sessionId) { sender ->
-                                session.commit(sender)
-                            }
-                        status = result.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
-                        message = result.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
-                    }
-                }
+                status = outcome.first
+                message = outcome.second
             }
                 .onFailure {
                     status = PackageInstaller.STATUS_FAILURE
                     message = it.message + "\n" + it.stackTraceToString()
+                    Log.e(TAG, "Install failed", it)
                 }
         }
+        // Logged, not merely returned: the caller writes this into the in-app patch report, and the
+        // device that cannot install is exactly the one whose owner sends a logcat instead.
+        Log.i(TAG, "Install result: status=$status message=$message")
         return Pair(status, message)
+    }
+
+    /** The silent install, or null when it produced no answer -- whether by silence or by failing outright. */
+    private suspend fun trySilentInstall(apks: List<File>): Pair<Int, String?>? =
+        try {
+            installThroughShell(apks)
+        } catch (t: CancellationException) {
+            throw t
+        } catch (t: Throwable) {
+            Log.w(TAG, "The shell installer could not be used", t)
+            null
+        }
+
+    /** The session parameters both installers use; the shell one may ask for more than an app can. */
+    private fun installParams(shizuku: Boolean): PackageInstaller.SessionParams {
+        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+        if (shizuku) {
+            var flags = Refine.unsafeCast<SessionParamsHidden>(params).installFlags
+            // Verification is a step the package manager hands to another app and then waits on, and a
+            // session whose verifier never answers stays committed and unfinished with nothing to
+            // report. Asking to skip it costs nothing and helps where the service allows it.
+            flags =
+                flags or
+                    PackageManagerHidden.INSTALL_ALLOW_TEST or
+                    PackageManagerHidden.INSTALL_REPLACE_EXISTING or
+                    INSTALL_DISABLE_VERIFICATION
+            Refine.unsafeCast<SessionParamsHidden>(params).installFlags = flags
+        }
+        return params
+    }
+
+    /**
+     * The silent install, or null when the installer never answered.
+     *
+     * Null is deliberately not a failure: it is the one outcome worth trying somewhere else. The session is described
+     * into the log on the way out, since whether the installer still holds it, has committed it, or no longer has it at
+     * all is not visible from this side of the call.
+     */
+    private suspend fun installThroughShell(apks: List<File>): Pair<Int, String?>? {
+        val startedAt = System.currentTimeMillis()
+        val (sessionId, session) = ShizukuApi.createPackageInstallerSession(installParams(shizuku = true))
+        session.use {
+            apks.forEach { apk -> session.writeApk(apk) }
+            var result: Intent? = null
+            // Bounded, because an unbounded wait has no way to end: a commit whose status never
+            // arrives leaves the screen saying "installing" with nothing written anywhere.
+            val answered =
+                withTimeoutOrNull(SILENT_ACTION_TIMEOUT_MS) {
+                    suspendCancellableCoroutine<Unit> { cont ->
+                        val adapter = IntentSenderHelper.IIntentSenderAdaptor { intent ->
+                            // A request for confirmation is not an outcome: the dialog has to be
+                            // shown and the wait continued. Read as a status it would report a
+                            // number that describes nothing.
+                            if (
+                                intent.getIntExtra(
+                                    PackageInstaller.EXTRA_STATUS,
+                                    PackageInstaller.STATUS_FAILURE,
+                                ) == PackageInstaller.STATUS_PENDING_USER_ACTION
+                            ) {
+                                Log.i(TAG, "Silent install session $sessionId asked for user confirmation")
+                                // Only keep waiting if the confirmation is on screen; otherwise the
+                                // request itself is the outcome.
+                                if (launchConfirmation(intent)) return@IIntentSenderAdaptor
+                            }
+                            result = intent
+                            if (cont.isActive) cont.resume(Unit)
+                        }
+                        session.commit(IntentSenderHelper.newIntentSender(adapter))
+                    }
+                }
+            if (answered == null) {
+                Log.w(
+                    TAG,
+                    "Silent install: no result in ${SILENT_ACTION_TIMEOUT_MS / 1000}s; " +
+                        "session $sessionId ${ShizukuApi.describeSession(sessionId)}",
+                )
+                // Silence is not proof that nothing happened: a status can be lost while the install
+                // itself succeeds, and an install slower than the deadline finishes all the same. Ask
+                // the package manager what is installed before treating the wait as a failure.
+                arrivedSince(apks, startedAt)?.let { installed ->
+                    Log.i(TAG, "Install completed without reporting: $installed")
+                    return PackageInstaller.STATUS_SUCCESS to "installed without a status"
+                }
+                // Otherwise nothing is coming, and a session the installer has taken keeps its staged
+                // copy until something ends it. The work continues elsewhere, so this one is given up
+                // rather than left holding storage and a claim on the package name.
+                ShizukuApi.abandonSession(sessionId)
+                return null
+            }
+            val intent = result ?: return null
+            Log.i(TAG, "Silent install session $sessionId reported ${describeExtras(intent)}")
+            return outcomeOf(intent)
+        }
+    }
+
+    /**
+     * The package [apks] describe, if it is installed and was updated since [since], or null.
+     *
+     * Read from the package manager rather than from the installer, because the question is not what the session did
+     * but what the device now has.
+     */
+    private fun arrivedSince(apks: List<File>, since: Long): String? {
+        val pm = lspApp.packageManager
+        val name =
+            runCatching { pm.getPackageArchiveInfo(apks.first().absolutePath, 0)?.packageName }.getOrNull()
+                ?: return null
+        val info = runCatching { pm.getPackageInfo(name, 0) }.getOrNull() ?: return null
+        return if (info.lastUpdateTime >= since) name else null
+    }
+
+    /** The platform install, which shows the OS confirmation and always reports back. */
+    private suspend fun installThroughPlatform(apks: List<File>): Pair<Int, String?> {
+        val installer = lspApp.packageManager.packageInstaller
+        val sessionId = installer.createSession(installParams(shizuku = false))
+        installer.openSession(sessionId).use { session ->
+            apks.forEach { apk -> session.writeApk(apk) }
+            val result = awaitUserAction("$INSTALL_ACTION.$sessionId", sessionId) { sender -> session.commit(sender) }
+            Log.i(TAG, "Platform install session $sessionId reported ${describeExtras(result)}")
+            return outcomeOf(result)
+        }
+    }
+
+    /**
+     * The installer's answer as a status and a sentence.
+     *
+     * A request for confirmation arrives here only when it could not be shown, in which case why it could not is
+     * written into the answer beforehand: a bare status code that describes nothing is worse than no answer.
+     */
+    private fun outcomeOf(intent: Intent): Pair<Int, String?> {
+        val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+        return status to intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
+    }
+
+    /** Everything the installer put in its answer, since the status alone often explains nothing. */
+    private fun describeExtras(intent: Intent): String {
+        val extras = intent.extras ?: return "no extras"
+        return extras.keySet().joinToString(prefix = "{", postfix = "}") { key ->
+            @Suppress("DEPRECATION") "$key=${extras.get(key)}"
+        }
+    }
+
+    /**
+     * Every way this device offers to hand [apks] to another installer, most direct first, or empty when it offers
+     * none.
+     *
+     * Three facts shape the list. The artifact is app-private, so it can only travel as a content uri behind a grant.
+     * The two actions do not resolve alike -- one reaches the stock installer only for a content uri, and a device may
+     * answer one and not the other -- so both are asked rather than one assumed. And this manager answers such an
+     * intent itself, so it is excluded from what counts as a handler.
+     *
+     * One artifact only. A split app is several, and no action here carries more than one.
+     */
+    fun installHandoffIntents(apks: List<File>): List<Intent> {
+        val apk = apks.singleOrNull()?.takeIf { it.exists() && it.length() > 0 } ?: return emptyList()
+        val uri =
+            runCatching { FileProvider.getUriForFile(lspApp, "${lspApp.packageName}.patched", apk) }
+                .onFailure { Log.w(TAG, "Cannot share ${apk.name} for hand-off", it) }
+                .getOrNull() ?: return emptyList()
+        return listOf(Intent.ACTION_INSTALL_PACKAGE, Intent.ACTION_VIEW).mapNotNull { action ->
+            val intent =
+                Intent(action)
+                    .setDataAndType(uri, APK_MIME_TYPE)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            val handlers = runCatching {
+                lspApp.packageManager.queryIntentActivities(intent, 0)
+            }
+                .getOrDefault(emptyList())
+            val others = handlers.map { it.activityInfo.packageName }.filter { it != lspApp.packageName }
+            if (others.isEmpty()) {
+                null
+            } else {
+                Log.i(TAG, "Hand-off available via $action to $others")
+                intent
+            }
+        }
+    }
+
+    /**
+     * Starts the first hand-off the system accepts, and returns the reason when none is accepted.
+     *
+     * Resolving an intent and being allowed to start it are different questions, and a device can answer the first and
+     * refuse the second. Every attempt is logged with what it was and how it ended, so a hand-off that does nothing can
+     * be told from one that was never attempted.
+     */
+    fun startHandoff(context: Context, intents: List<Intent>): String? {
+        if (intents.isEmpty()) return "no application on this device answers an install intent"
+        var last: String? = null
+        for (intent in intents) {
+            Log.i(TAG, "Hand-off: starting ${intent.action}")
+            val failure = runCatching { context.startActivity(intent) }.exceptionOrNull()
+            if (failure == null) {
+                Log.i(TAG, "Hand-off: ${intent.action} accepted")
+                return null
+            }
+            Log.w(TAG, "Hand-off: ${intent.action} refused", failure)
+            last = failure.toString()
+        }
+        // A picker names no component, which a system can allow where it refuses a direct start.
+        val chooser = Intent.createChooser(intents.first(), null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val failure = runCatching { context.startActivity(chooser) }.exceptionOrNull()
+        if (failure == null) {
+            Log.i(TAG, "Hand-off: chooser accepted")
+            return null
+        }
+        Log.e(TAG, "Hand-off: every candidate refused", failure)
+        return failure.toString().ifBlank { last }
+    }
+
+    /**
+     * Opens the installer's own confirmation for a session that asked for one, and reports whether it could be shown.
+     *
+     * A confirmation that cannot be confirmed will never be answered, so a failure to show it ends the wait rather than
+     * reproducing the hang deadlines exist to prevent. It can fail for more than one reason -- the request may carry no
+     * intent, or name a component the device cannot resolve, or be refused -- so the reason is taken from the refusal
+     * and recorded on the answer instead of being named in advance.
+     */
+    private fun launchConfirmation(intent: Intent): Boolean {
+        @Suppress("DEPRECATION") val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+        if (confirm == null) {
+            Log.w(TAG, "The installer asked for user action without an intent to show")
+            intent.noteUnshownConfirmation("the install needs a confirmation, and none was offered to show")
+            return false
+        }
+        confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val refusal = runCatching { lspApp.startActivity(confirm) }.exceptionOrNull() ?: return true
+        Log.w(TAG, "Could not open the install confirmation", refusal)
+        intent.noteUnshownConfirmation("the install needs a confirmation that could not be shown: $refusal")
+        return false
+    }
+
+    /** Records why a confirmation went unshown, unless the installer already said something of its own. */
+    private fun Intent.noteUnshownConfirmation(reason: String) {
+        if (getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE).isNullOrEmpty()) {
+            putExtra(PackageInstaller.EXTRA_STATUS_MESSAGE, reason)
+        }
     }
 
     private fun PackageInstaller.Session.writeApk(apk: File) {
@@ -372,6 +622,7 @@ object LSPPackageManager {
                     message = it.message + "\n" + it.stackTraceToString()
                 }
         }
+        Log.i(TAG, "System uninstall result: status=$status message=$message")
         return Pair(status, message)
     }
 
@@ -412,10 +663,7 @@ object LSPPackageManager {
             object : BroadcastReceiver() {
                 override fun onReceive(c: Context, intent: Intent) {
                     val st = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
-                    if (st == PackageInstaller.STATUS_PENDING_USER_ACTION) {
-                        @Suppress("DEPRECATION") val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
-                        confirm?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        runCatching { context.startActivity(confirm) }
+                    if (st == PackageInstaller.STATUS_PENDING_USER_ACTION && launchConfirmation(intent)) {
                         return
                     }
                     runCatching { context.unregisterReceiver(this) }
@@ -445,19 +693,25 @@ object LSPPackageManager {
     }
 
     suspend fun uninstall(packageName: String): Pair<Int, String?> {
+        Log.i(TAG, "Uninstall $packageName through Shizuku")
         var status = PackageInstaller.STATUS_FAILURE
         var message: String? = null
         withContext(Dispatchers.IO) {
             runCatching {
                 var result: Intent? = null
-                suspendCoroutine { cont ->
-                    val adapter = IntentSenderHelper.IIntentSenderAdaptor { intent ->
-                        result = intent
-                        cont.resume(Unit)
+                withTimeoutOrNull(SILENT_ACTION_TIMEOUT_MS) {
+                    suspendCancellableCoroutine<Unit> { cont ->
+                        val adapter = IntentSenderHelper.IIntentSenderAdaptor { intent ->
+                            result = intent
+                            if (cont.isActive) cont.resume(Unit)
+                        }
+                        val intentSender = IntentSenderHelper.newIntentSender(adapter)
+                        ShizukuApi.uninstallPackage(packageName, intentSender)
                     }
-                    val intentSender = IntentSenderHelper.newIntentSender(adapter)
-                    ShizukuApi.uninstallPackage(packageName, intentSender)
                 }
+                    ?: throw IOException(
+                        "the uninstaller did not report a result within ${SILENT_ACTION_TIMEOUT_MS / 1000}s"
+                    )
                 result?.let {
                     status = it.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
                     message = it.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
@@ -468,6 +722,7 @@ object LSPPackageManager {
                     message = "Exception happened\n$it"
                 }
         }
+        Log.i(TAG, "Uninstall result: status=$status message=$message")
         return Pair(status, message)
     }
 

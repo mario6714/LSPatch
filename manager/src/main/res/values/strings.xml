@@ -162,6 +162,7 @@
     <string name="patch_action_update_loader">Update loader</string>
     <string name="patch_action_install">Install</string>
     <string name="patch_action_open">Open</string>
+    <string name="patch_action_other_installer">Another installer</string>
     <string name="patch_action_retry">Retry</string>
     <string name="patch_patched">Patched</string>
     <string name="patch_patched_splits">base + %1$d splits</string>

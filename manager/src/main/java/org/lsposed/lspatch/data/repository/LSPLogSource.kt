@@ -311,7 +311,7 @@ class LSPLogSource(private val context: Context) : LogSource {
      * this app may request an install at all -- rather than assuming the stock installer is present. Replacing it is
      * something people do.
      */
-    private fun installerReport(): String {
+    private suspend fun installerReport(): String {
         val pm = context.packageManager
         return buildString {
             appendLine(
@@ -328,6 +328,13 @@ class LSPLogSource(private val context: Context) : LogSource {
                     appendLine(handlersOf(installIntent(action, scheme)))
                 }
             }
+            // The confirmation a committed session can ask for is shown by an installer component,
+            // named rather than resolved, so whether anything answers it decides whether a session
+            // that asks can ever be completed.
+            appendLine("Verifies shell installs: ${ShizukuApi.verifiesShellInstalls() ?: "unknown"}")
+            appendLine()
+            appendLine("Handles CONFIRM_INSTALL:")
+            appendLine(handlersOf(Intent("android.content.pm.action.CONFIRM_INSTALL")))
             appendLine("Known installer packages:")
             for (name in KNOWN_INSTALLERS) appendLine("  $name: ${packageState(name)}")
         }

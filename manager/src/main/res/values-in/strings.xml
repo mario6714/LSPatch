@@ -201,6 +201,7 @@
     <string name="patch_action_update_loader">Perbarui loader</string>
     <string name="patch_action_install">Pasang</string>
     <string name="patch_action_open">Buka</string>
+    <string name="patch_action_other_installer">Pemasang lain</string>
     <string name="patch_action_retry">Coba lagi</string>
     <string name="patch_patched">Ditambal</string>
     <string name="patch_patched_splits">basis + %1$d split</string>

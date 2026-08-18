@@ -201,6 +201,7 @@
     <string name="patch_action_update_loader">로더 업데이트</string>
     <string name="patch_action_install">설치</string>
     <string name="patch_action_open">열기</string>
+    <string name="patch_action_other_installer">다른 설치 프로그램</string>
     <string name="patch_action_retry">다시 시도</string>
     <string name="patch_patched">패치됨</string>
     <string name="patch_patched_splits">기본 + 분할 %1$d개</string>

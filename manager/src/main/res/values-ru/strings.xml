@@ -201,6 +201,7 @@
     <string name="patch_action_update_loader">Обновить загрузчик</string>
     <string name="patch_action_install">Установить</string>
     <string name="patch_action_open">Открыть</string>
+    <string name="patch_action_other_installer">Другой установщик</string>
     <string name="patch_action_retry">Повторить</string>
     <string name="patch_patched">Пропатчено</string>
     <string name="patch_patched_splits">база + %1$d сплитов</string>

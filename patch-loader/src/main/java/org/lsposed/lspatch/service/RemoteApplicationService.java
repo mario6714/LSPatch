@@ -12,6 +12,7 @@ import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.ParcelFileDescriptor;
 import android.os.RemoteException;
+import android.os.SystemClock;
 import android.os.UserHandle;
 import android.util.Log;
 import android.widget.Toast;
@@ -28,7 +29,6 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 /**
  * The {@link IFrameworkService} for manager mode: it binds the manager's service and forwards module
@@ -37,6 +37,15 @@ import java.util.concurrent.TimeoutException;
 public class RemoteApplicationService implements IFrameworkService {
 
     private static final String TAG = "LSPatch";
+
+    /**
+     * How long the app waits for the manager's binder.
+     *
+     * The bind carries BIND_AUTO_CREATE, so when the manager is not running this wait covers starting
+     * its process from nothing before it can answer. The app's own startup is held open meanwhile,
+     * which is why it is a few seconds and not more.
+     */
+    private static final long BIND_TIMEOUT_MS = 5000;
 
     private volatile IFrameworkService service;
 
@@ -65,9 +74,11 @@ public class RemoteApplicationService implements IFrameworkService {
                     service = null;
                 }
             };
-            Log.i(TAG, "Request manager binder");
+            Log.i(TAG, "Request manager binder from " + packageName);
+            boolean bound;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                context.bindService(intent, Context.BIND_AUTO_CREATE, Executors.newSingleThreadExecutor(), conn);
+                bound = context.bindService(
+                        intent, Context.BIND_AUTO_CREATE, Executors.newSingleThreadExecutor(), conn);
             } else {
                 var handlerThread = new HandlerThread("RemoteApplicationService");
                 handlerThread.start();
@@ -77,12 +88,32 @@ public class RemoteApplicationService implements IFrameworkService {
                 var bindServiceAsUserMethod = contextImplClass.getDeclaredMethod(
                         "bindServiceAsUser", Intent.class, ServiceConnection.class, int.class, Handler.class, UserHandle.class);
                 var userHandle = (UserHandle) getUserMethod.invoke(context);
-                bindServiceAsUserMethod.invoke(context, intent, conn, Context.BIND_AUTO_CREATE, handler, userHandle);
+                bound = Boolean.TRUE.equals(bindServiceAsUserMethod.invoke(
+                        context, intent, conn, Context.BIND_AUTO_CREATE, handler, userHandle));
             }
-            boolean success = latch.await(1, TimeUnit.SECONDS);
-            if (!success) throw new TimeoutException("Bind service timeout");
+            // A refusal and a slow start are different failures. The system refuses when it will not
+            // start the manager at all -- it is not installed, or its package is in a state the system
+            // will not launch -- and no amount of waiting changes that, so it is reported at once and
+            // on its own.
+            if (!bound) {
+                Log.e(TAG, "System refused to bind " + packageName + "; it may not be installed");
+                Toast.makeText(context, "LSPatch manager not reachable", Toast.LENGTH_SHORT).show();
+                throw new RemoteException("bindService refused for " + packageName);
+            }
+            var start = SystemClock.elapsedRealtime();
+            boolean success = latch.await(BIND_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            var elapsed = SystemClock.elapsedRealtime() - start;
+            if (!success) {
+                // The app's own start is held open by this wait, so it ends rather than growing. The
+                // elapsed time is logged either way: a late bind and one that never lands are the same
+                // from here, and only that number tells them apart.
+                Log.e(TAG, "Manager did not answer in " + elapsed + "ms");
+                Toast.makeText(context, "LSPatch manager did not answer", Toast.LENGTH_SHORT).show();
+                throw new RemoteException("No manager binder after " + elapsed + "ms");
+            }
+            Log.i(TAG, "Manager binder received in " + elapsed + "ms");
         } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException |
-                 InterruptedException | TimeoutException e) {
+                 InterruptedException e) {
             Toast.makeText(context, "Unable to connect to Manager", Toast.LENGTH_SHORT).show();
             var r = new RemoteException("Failed to get manager binder");
             r.initCause(e);

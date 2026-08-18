@@ -28,6 +28,19 @@ object ShizukuDebugTrigger {
 
     private const val ACTION = "org.lsposed.lspatch.SIMULATE_SHIZUKU_FAILURE"
 
+    /**
+     * Debug builds only: exercises the hand-off without needing an install to fail first.
+     *
+     * ```
+     * adb shell am broadcast -a org.lsposed.lspatch.TEST_HANDOFF
+     * ```
+     *
+     * Copies this app's own apk into the private directory a patched artifact would occupy and offers that, so the
+     * receiving application meets the same content uri, the same grant and the same private path it would meet in
+     * earnest.
+     */
+    private const val HANDOFF_ACTION = "org.lsposed.lspatch.TEST_HANDOFF"
+
     fun register(context: Context) {
         val receiver =
             object : BroadcastReceiver() {
@@ -73,5 +86,33 @@ object ShizukuDebugTrigger {
                 }
             }
         ContextCompat.registerReceiver(context, receiver, IntentFilter(ACTION), ContextCompat.RECEIVER_EXPORTED)
+
+        val handoff =
+            object : BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: Intent) {
+                    val source = java.io.File(context.applicationInfo.sourceDir)
+                    val dir = java.io.File(context.noBackupFilesDir, "patched/handoff-test").also { it.mkdirs() }
+                    val copy = java.io.File(dir, "handoff-test.apk")
+                    runCatching { source.copyTo(copy, overwrite = true) }
+                        .onFailure {
+                            android.util.Log.e("ShizukuDebugTrigger", "Could not stage a hand-off artifact", it)
+                            return
+                        }
+                    val only = intent.getStringExtra("pkg")
+                    val intents =
+                        LSPPackageManager.installHandoffIntents(listOf(copy)).map {
+                            if (only.isNullOrEmpty()) it else Intent(it).setPackage(only)
+                        }
+                    android.util.Log.i("ShizukuDebugTrigger", "Hand-off test: ${intents.size} candidate(s)")
+                    val failure = LSPPackageManager.startHandoff(context, intents)
+                    android.util.Log.i("ShizukuDebugTrigger", "Hand-off test result: ${failure ?: "accepted"}")
+                }
+            }
+        ContextCompat.registerReceiver(
+            context,
+            handoff,
+            IntentFilter(HANDOFF_ACTION),
+            ContextCompat.RECEIVER_EXPORTED,
+        )
     }
 }

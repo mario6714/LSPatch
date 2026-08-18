@@ -94,13 +94,16 @@ object ShizukuApi {
 
     private const val SERVICE_TIMEOUT_MS = 3000L
 
+    /** The setting the package manager reads before verifying what the shell installs. */
+    private const val ADB_VERIFY_SETTING = "verifier_verify_adb_installs"
+
     /**
      * How long a bind may stay in flight before another is allowed.
      *
-     * bindUserService returns void and carries no result callback, so a bind that never lands is only noticed by
-     * giving up on it. The bound is above the server's own 30s start timeout on purpose: while that timeout runs the
-     * record stays marked "starting" and further requests are ignored, so an earlier retry does nothing, and after it
-     * the record is gone and a retry really does start a process.
+     * bindUserService returns void and carries no result callback, so a bind that never lands is only noticed by giving
+     * up on it. The bound is above the server's own 30s start timeout on purpose: while that timeout runs the record
+     * stays marked "starting" and further requests are ignored, so an earlier retry does nothing, and after it the
+     * record is gone and a retry really does start a process.
      */
     private const val BIND_TIMEOUT_MS = 40_000L
 
@@ -443,15 +446,54 @@ object ShizukuApi {
      * as the install's own outcome. Recorded here all the same, so the trace is available to the reader and not only to
      * the patch log.
      */
-    fun createPackageInstallerSession(params: PackageInstaller.SessionParams): PackageInstaller.Session =
+    fun createPackageInstallerSession(params: PackageInstaller.SessionParams): Pair<Int, PackageInstaller.Session> =
         try {
             val sessionId = packageInstaller.createSession(params)
             val iSession =
                 IPackageInstallerSession.Stub.asInterface(iPackageInstaller.openSession(sessionId).asShizukuBinder())
-            Refine.unsafeCast(PackageInstallerHidden.SessionHidden(iSession))
+            sessionId to Refine.unsafeCast<PackageInstaller.Session>(PackageInstallerHidden.SessionHidden(iSession))
         } catch (t: Throwable) {
             record(ShizukuOp.Install, ShizukuReason.CallFailed, t.toString(), t)
             throw t
+        }
+
+    /**
+     * Gives up a session the installer has taken and not finished.
+     *
+     * A committed session holds its staged copy of the package until something ends it, and an install that is being
+     * retried elsewhere has no further use for the one that went quiet.
+     */
+    fun abandonSession(sessionId: Int) {
+        guard(ShizukuOp.Install, Unit) {
+            packageInstaller.abandonSession(sessionId)
+            Log.i(TAG, "Abandoned session $sessionId")
+        }
+    }
+
+    /**
+     * What the installer still thinks of a session, as one line for a report.
+     *
+     * Asked when a commit has gone quiet: whether the session is gone, sealed and waiting, or never left the ground is
+     * the difference between "the system took it and said nothing" and "it was dropped", which no amount of staring at
+     * our own side can tell apart.
+     */
+    fun describeSession(sessionId: Int): String =
+        guard(ShizukuOp.Install, "could not be read") {
+            val info = packageInstaller.getSessionInfo(sessionId)
+            if (info == null) {
+                "gone (abandoned, or applied without reporting)"
+            } else {
+                // Whether a session is sealed is only readable from a release that has those fields;
+                // below it the rest of the line still separates the states worth telling apart.
+                val sealed =
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        " staged=${info.isStaged} committed=${info.isCommitted}"
+                    } else {
+                        ""
+                    }
+                "active=${info.isActive}$sealed progress=${info.progress} " +
+                    "installer=${info.installerPackageName} package=${info.appPackageName}"
+            }
         }
 
     /**
@@ -526,6 +568,20 @@ object ShizukuApi {
      */
     suspend fun readFileChunk(path: String, offset: Long, maxBytes: Int): ByteArray? =
         onService(ShizukuOp.Logs, null) { it.readFileChunk(path, offset, maxBytes) }
+
+    /**
+     * Whether the platform verifies packages installed from the shell, or null when it cannot be read.
+     *
+     * Verification is an asynchronous step the package manager delegates and then waits on, and a session whose
+     * verifier never answers stays committed and unfinished. Whether a device verifies what the shell installs is
+     * therefore part of describing that device, and belongs in a report about an install that did not complete.
+     */
+    suspend fun verifiesShellInstalls(): Boolean? {
+        val value = runShellCommand("settings get global $ADB_VERIFY_SETTING")?.trim() ?: return null
+        // Unset reads as "null" and means the default, which is to verify.
+        if (value.isEmpty() || value == "null") return true
+        return value.toIntOrNull()?.let { it != 0 }
+    }
 
     suspend fun performDexOptMode(packageName: String): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) { // API 34+

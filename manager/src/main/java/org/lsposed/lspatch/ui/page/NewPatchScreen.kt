@@ -2,15 +2,12 @@ package org.lsposed.lspatch.ui.page
 
 import android.content.Intent
 import android.text.format.Formatter
-
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,40 +25,40 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Notes
 import androidx.compose.material.icons.outlined.Ballot
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Android
 import androidx.compose.material.icons.rounded.Api
 import androidx.compose.material.icons.rounded.Archive
-import androidx.compose.material.icons.rounded.DriveFileRenameOutline
-import androidx.compose.material.icons.rounded.Http
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.CheckBox
 import androidx.compose.material.icons.rounded.CheckBoxOutlineBlank
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.DriveFileRenameOutline
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.FolderOpen
-import androidx.compose.material.icons.rounded.Layers
-import androidx.compose.material.icons.automirrored.rounded.Notes
-import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Http
 import androidx.compose.material.icons.rounded.Key
+import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.RemoveModerator
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.WorkOutline
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -69,31 +66,31 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.InputChipDefaults
-import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -127,9 +124,9 @@ import org.lsposed.lspatch.data.model.PatchTarget
 import org.lsposed.lspatch.data.model.color
 import org.lsposed.lspatch.data.model.labelRes
 import org.lsposed.lspatch.data.repository.PatchJobHost
+import org.lsposed.lspatch.data.repository.PatchOutputStore
 import org.lsposed.lspatch.lspApp
 import org.lsposed.lspatch.ui.component.DetailTopBar
-import org.lsposed.lspatch.ui.component.ExportApkLauncher
 import org.lsposed.lspatch.ui.component.PatchLog
 import org.lsposed.lspatch.ui.component.PatchStepList
 import org.lsposed.lspatch.ui.component.rememberExportApk
@@ -147,13 +144,12 @@ import org.matrix.vector.ui.copyToClipboard
 /**
  * Configures one patch, then shows it happening.
  *
- * One screen for deciding and for watching, because it is one act with a pause in it: the app being
- * patched never changes, so leaving it named at the top and swapping the body under it says more
- * than pushing a second screen would.
+ * One screen for deciding and for watching, because it is one act with a pause in it: the app being patched never
+ * changes, so leaving it named at the top and swapping the body under it says more than pushing a second screen would.
  *
- * The patch itself belongs to `PatchJobHost`, not to this screen. Leaving is therefore just
- * leaving -- the job carries on and Manage shows it running -- rather than being refused, which is
- * what the old screen did by swallowing the back gesture outright.
+ * The patch itself belongs to `PatchJobHost`, not to this screen. Leaving is therefore just leaving -- the job carries
+ * on and Manage shows it running -- rather than being refused, which is what the old screen did by swallowing the back
+ * gesture outright.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Destination
@@ -229,9 +225,10 @@ fun NewPatchScreen(
                             ) {
                                 Icon(
                                     Icons.Rounded.Terminal,
-                                    contentDescription = stringResource(
-                                        if (showLog) R.string.patch_hide_log else R.string.patch_show_log
-                                    ),
+                                    contentDescription =
+                                        stringResource(
+                                            if (showLog) R.string.patch_hide_log else R.string.patch_show_log
+                                        ),
                                 )
                             }
                         }
@@ -244,12 +241,14 @@ fun NewPatchScreen(
                                     text = { Text(stringResource(R.string.logs_word_wrap)) },
                                     leadingIcon = {
                                         Icon(
-                                            if (logWrap) Icons.Rounded.CheckBox
-                                            else Icons.Rounded.CheckBoxOutlineBlank,
+                                            if (logWrap) Icons.Rounded.CheckBox else Icons.Rounded.CheckBoxOutlineBlank,
                                             contentDescription = null,
                                         )
                                     },
-                                    onClick = { logWrap = !logWrap; logMenu = false },
+                                    onClick = {
+                                        logWrap = !logWrap
+                                        logMenu = false
+                                    },
                                 )
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.patch_copy_log)) },
@@ -268,15 +267,15 @@ fun NewPatchScreen(
                                         // Sent as text rather than a file: a patch report is a few
                                         // kilobytes, and a file needs a provider grant that every
                                         // target has to be willing to take.
-                                        val send = Intent(Intent.ACTION_SEND).apply {
-                                            type = "text/plain"
-                                            putExtra(Intent.EXTRA_SUBJECT, "LSPatch report: " + request.packageName)
-                                            putExtra(Intent.EXTRA_TEXT, PatchJobHost.report())
-                                        }
+                                        val send =
+                                            Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(Intent.EXTRA_SUBJECT, "LSPatch report: " + request.packageName)
+                                                putExtra(Intent.EXTRA_TEXT, PatchJobHost.report())
+                                            }
                                         runCatching {
                                             context.startActivity(
-                                                Intent.createChooser(send, null)
-                                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                             )
                                         }
                                     },
@@ -315,50 +314,52 @@ fun NewPatchScreen(
     ) { innerPadding ->
         Box(Modifier.padding(innerPadding).fillMaxSize()) {
             when {
-                showLog -> PatchLog(
-                    lines = lines,
-                    terminal = shown.terminal,
-                    wrap = logWrap,
-                    modifier = Modifier.fillMaxSize().padding(16.dp),
-                )
-                configuring -> ConfigureBody(
-                    request = request,
-                    modules = viewModel.modules,
-                    onMode = viewModel::setMode,
-                    onDebuggable = viewModel::setDebuggable,
-                    onVersionCode = viewModel::setVersionCodeOverride,
-                    onInjectDex = viewModel::setInjectDex,
-                    onSigBypass = viewModel::setSigBypassLevel,
-                    onRemoveModule = viewModel::removeModule,
-                    onAddInstalled = {
-                        navigator.navigate(
-                            SelectModulesScreenDestination(
-                                initialSelected = viewModel.modules.mapTo(ArrayList()) { it.packageName }
-                            )
-                        )
-                    },
-                    onAddFromStorage = { added -> viewModel.addModules(added) },
-                    onLabel = viewModel::setLabelOverride,
-                    onExtractNativeLibs = viewModel::setExtractNativeLibs,
-                    onCleartext = viewModel::setUsesCleartextTraffic,
-                    onAddPermission = viewModel::addPermission,
-                    onRemovePermission = viewModel::removePermission,
-                    onInjectDocumentsProvider = viewModel::setInjectDocumentsProvider,
-                )
-                else -> Column(
-                    Modifier
-                        .fillMaxSize()
-                        // Scrollable, because an expanded step can be taller than the screen -- and
-                        // without this the overflow simply had nowhere to go.
-                        .verticalScroll(rememberScrollState())
-                        .padding(20.dp)
-                ) {
-                    PatchStepList(
-                        step = shown,
-                        modules = request.effectiveModules.map { it.packageName },
+                showLog ->
+                    PatchLog(
                         lines = lines,
+                        terminal = shown.terminal,
+                        wrap = logWrap,
+                        modifier = Modifier.fillMaxSize().padding(16.dp),
                     )
-                }
+                configuring ->
+                    ConfigureBody(
+                        request = request,
+                        modules = viewModel.modules,
+                        onMode = viewModel::setMode,
+                        onDebuggable = viewModel::setDebuggable,
+                        onVersionCode = viewModel::setVersionCodeOverride,
+                        onInjectDex = viewModel::setInjectDex,
+                        onSigBypass = viewModel::setSigBypassLevel,
+                        onRemoveModule = viewModel::removeModule,
+                        onAddInstalled = {
+                            navigator.navigate(
+                                SelectModulesScreenDestination(
+                                    initialSelected = viewModel.modules.mapTo(ArrayList()) { it.packageName }
+                                )
+                            )
+                        },
+                        onAddFromStorage = { added -> viewModel.addModules(added) },
+                        onLabel = viewModel::setLabelOverride,
+                        onExtractNativeLibs = viewModel::setExtractNativeLibs,
+                        onCleartext = viewModel::setUsesCleartextTraffic,
+                        onAddPermission = viewModel::addPermission,
+                        onRemovePermission = viewModel::removePermission,
+                        onInjectDocumentsProvider = viewModel::setInjectDocumentsProvider,
+                    )
+                else ->
+                    Column(
+                        Modifier.fillMaxSize()
+                            // Scrollable, because an expanded step can be taller than the screen -- and
+                            // without this the overflow simply had nowhere to go.
+                            .verticalScroll(rememberScrollState())
+                            .padding(20.dp)
+                    ) {
+                        PatchStepList(
+                            step = shown,
+                            modules = request.effectiveModules.map { it.packageName },
+                            lines = lines,
+                        )
+                    }
             }
         }
     }
@@ -367,12 +368,11 @@ fun NewPatchScreen(
 /**
  * The patch's settings.
  *
- * Built around the fact that these decisions are not equal. The mode is architectural -- it decides
- * whether the app can run without the manager, and whether its modules can ever be changed again
- * without rebuilding it -- while debuggable, version-code override and the rest are expert flags
- * that most patches leave exactly as they are. Presenting all of them as one flat list of rows made
- * a one-decision task look like a six-decision form, so the mode is given the room it deserves and
- * the flags are folded away behind a summary that says what they currently are.
+ * Built around the fact that these decisions are not equal. The mode is architectural -- it decides whether the app can
+ * run without the manager, and whether its modules can ever be changed again without rebuilding it -- while debuggable,
+ * version-code override and the rest are expert flags that most patches leave exactly as they are. Presenting all of
+ * them as one flat list of rows made a one-decision task look like a six-decision form, so the mode is given the room
+ * it deserves and the flags are folded away behind a summary that says what they currently are.
  */
 @Composable
 private fun ConfigureBody(
@@ -415,9 +415,7 @@ private fun ConfigureBody(
         }
 
     Column(
-        Modifier
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp),
+        Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Spacer(Modifier.height(2.dp))
@@ -565,7 +563,10 @@ private fun ConfigureBody(
                 var label by rememberSaveable { mutableStateOf(request.labelOverride.orEmpty()) }
                 OutlinedTextField(
                     value = label,
-                    onValueChange = { label = it; onLabel(it) },
+                    onValueChange = {
+                        label = it
+                        onLabel(it)
+                    },
                     label = { Text(stringResource(R.string.patch_manifest_label)) },
                     placeholder = { Text(stringResource(R.string.patch_manifest_label_hint)) },
                     leadingIcon = { Icon(Icons.Rounded.DriveFileRenameOutline, contentDescription = null) },
@@ -624,19 +625,20 @@ private fun ConfigureBody(
 /**
  * The permissions worth one tap, shortest name first.
  *
- * Not a catalogue -- the field below takes any permission -- just the handful a module most often
- * finds missing, INTERNET at the front because it is the one the request that prompted this feature
- * named. Fully qualified so they read the same here, on the chip, and in the manifest.
+ * Not a catalogue -- the field below takes any permission -- just the handful a module most often finds missing,
+ * INTERNET at the front because it is the one the request that prompted this feature named. Fully qualified so they
+ * read the same here, on the chip, and in the manifest.
  */
-private val COMMON_PERMISSIONS = listOf(
-    "android.permission.INTERNET",
-    "android.permission.ACCESS_NETWORK_STATE",
-    "android.permission.ACCESS_WIFI_STATE",
-    "android.permission.READ_EXTERNAL_STORAGE",
-    "android.permission.WRITE_EXTERNAL_STORAGE",
-    "android.permission.POST_NOTIFICATIONS",
-    "android.permission.QUERY_ALL_PACKAGES",
-)
+private val COMMON_PERMISSIONS =
+    listOf(
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.ACCESS_WIFI_STATE",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.QUERY_ALL_PACKAGES",
+    )
 
 /** The last dotted segment -- what a permission is called once its namespace is understood. */
 private fun permissionShortName(name: String): String = name.substringAfterLast('.')
@@ -644,15 +646,13 @@ private fun permissionShortName(name: String): String = name.substringAfterLast(
 /**
  * Adds extra `uses-permission` entries to the patched manifest (issue #44).
  *
- * A module can need a permission the host app never declared -- INTERNET most often -- and without
- * it the platform simply denies the call at runtime. The list is additive and de-duplicated: the
- * manifest editor drops a name the app already has, so nothing here can remove or weaken a
- * permission, only add one the app lacked.
+ * A module can need a permission the host app never declared -- INTERNET most often -- and without it the platform
+ * simply denies the call at runtime. The list is additive and de-duplicated: the manifest editor drops a name the app
+ * already has, so nothing here can remove or weaken a permission, only add one the app lacked.
  *
- * Three ways in, narrowing as they go: the common ones as one-tap suggestions, a field for anything
- * else (a bare word is completed to `android.permission.*`), and each added permission shown as a
- * chip that removes itself. The short name is what the eye needs; the full name rides along as the
- * chip's accessibility label.
+ * Three ways in, narrowing as they go: the common ones as one-tap suggestions, a field for anything else (a bare word
+ * is completed to `android.permission.*`), and each added permission shown as a chip that removes itself. The short
+ * name is what the eye needs; the full name rides along as the chip's accessibility label.
  */
 @Composable
 private fun PermissionEditor(
@@ -744,9 +744,9 @@ private data class OptionChipData(
 /**
  * What the folded-away options currently say, so they can be left folded with confidence.
  *
- * The signature-bypass level is always shown because it always has one; everything else appears
- * only when it is *not* the default. Reading the header therefore answers both questions at once --
- * what the patch will do, and whether anything here has been touched -- without expanding it.
+ * The signature-bypass level is always shown because it always has one; everything else appears only when it is *not*
+ * the default. Reading the header therefore answers both questions at once -- what the patch will do, and whether
+ * anything here has been touched -- without expanding it.
  */
 @Composable
 private fun advancedChips(request: PatchRequest): List<OptionChipData> = buildList {
@@ -801,34 +801,39 @@ private fun advancedChips(request: PatchRequest): List<OptionChipData> = buildLi
 /**
  * What is being patched, as facts the bar above does not carry.
  *
- * The bar already names the app, so repeating the name here would spend the top of the screen
- * saying nothing new. The icon is identity at a glance, and the version and size are the two things
- * worth confirming before spending thirty seconds rebuilding something -- particularly when the apk
- * came from storage and may not be the build the reader thought it was.
+ * The bar already names the app, so repeating the name here would spend the top of the screen saying nothing new. The
+ * icon is identity at a glance, and the version and size are the two things worth confirming before spending thirty
+ * seconds rebuilding something -- particularly when the apk came from storage and may not be the build the reader
+ * thought it was.
  */
 @Composable
 private fun TargetStrip(request: PatchRequest) {
     val context = LocalContext.current
-    val icon = remember(request.packageName) {
-        LSPPackageManager.appList
-            .firstOrNull { it.app.packageName == request.packageName }
-            ?.let { runCatching { LSPPackageManager.getIcon(it) }.getOrNull() }
-    }
-    val version = remember(request.packageName) {
-        runCatching {
-            lspApp.packageManager.getPackageInfo(request.packageName, 0).versionName
-        }.getOrNull().orEmpty()
-    }
-    val size = remember(request.target.apkPaths) {
-        request.target.apkPaths.sumOf { runCatching { java.io.File(it).length() }.getOrDefault(0L) }
-    }
+    val icon =
+        remember(request.packageName) {
+            LSPPackageManager.appList
+                .firstOrNull { it.app.packageName == request.packageName }
+                ?.let { runCatching { LSPPackageManager.getIcon(it) }.getOrNull() }
+        }
+    val version =
+        remember(request.packageName) {
+            runCatching {
+                lspApp.packageManager.getPackageInfo(request.packageName, 0).versionName
+            }
+                .getOrNull()
+                .orEmpty()
+        }
+    val size =
+        remember(request.target.apkPaths) {
+            request.target.apkPaths.sumOf { runCatching { java.io.File(it).length() }.getOrDefault(0L) }
+        }
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(horizontal = 18.dp, vertical = 14.dp),
+        modifier =
+            Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                .padding(horizontal = 18.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
@@ -848,13 +853,15 @@ private fun TargetStrip(request: PatchRequest) {
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                text = buildList {
-                    if (version.isNotBlank()) add("v" + version)
-                                if (size > 0) add(Formatter.formatShortFileSize(context, size))
-                    if (request.target.apkPaths.size > 1) {
-                        add(stringResource(R.string.patch_patched_splits, request.target.apkPaths.size - 1))
-                    }
-                }.joinToString("  ·  "),
+                text =
+                    buildList {
+                            if (version.isNotBlank()) add("v" + version)
+                            if (size > 0) add(Formatter.formatShortFileSize(context, size))
+                            if (request.target.apkPaths.size > 1) {
+                                add(stringResource(R.string.patch_patched_splits, request.target.apkPaths.size - 1))
+                            }
+                        }
+                        .joinToString("  ·  "),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -867,14 +874,16 @@ private fun TargetStrip(request: PatchRequest) {
     }
 }
 
-private fun originLabel(request: PatchRequest): Int = when (request.origin) {
-    PatchOrigin.New -> when (request.target) {
-        is PatchTarget.ApkFiles -> R.string.patch_source_storage
-        else -> R.string.patch_source_installed
+private fun originLabel(request: PatchRequest): Int =
+    when (request.origin) {
+        PatchOrigin.New ->
+            when (request.target) {
+                is PatchTarget.ApkFiles -> R.string.patch_source_storage
+                else -> R.string.patch_source_installed
+            }
+        PatchOrigin.RePatch -> R.string.patch_source_repatch
+        PatchOrigin.UpdateLoader -> R.string.patch_source_repatch
     }
-    PatchOrigin.RePatch -> R.string.patch_source_repatch
-    PatchOrigin.UpdateLoader -> R.string.patch_source_repatch
-}
 
 /** A quiet section title, in the accent, above the group it names. */
 @Composable
@@ -903,15 +912,14 @@ private fun SectionLabel(text: String, trailing: String? = null) {
 /**
  * One rounded container holding a run of related rows.
  *
- * Rows on a bare background have nothing saying where one setting group ends and the next begins
- * except the gap between them, which a long subtitle closes up. A container is the cheapest way to
- * make the grouping structural rather than a matter of spacing.
+ * Rows on a bare background have nothing saying where one setting group ends and the next begins except the gap between
+ * them, which a long subtitle closes up. A container is the cheapest way to make the grouping structural rather than a
+ * matter of spacing.
  */
 @Composable
 private fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
     Column(
-        Modifier
-            .fillMaxWidth()
+        Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .padding(vertical = 4.dp),
@@ -930,9 +938,8 @@ private fun GroupDivider() {
 /**
  * One of the two patch modes, as a card that carries its own explanation.
  *
- * The selected one is filled and outlined in the accent and carries a tick; the other recedes to a
- * hairline. Both keep the same height and the same text, so choosing does not reflow the page under
- * the thumb that just chose.
+ * The selected one is filled and outlined in the accent and carries a tick; the other recedes to a hairline. Both keep
+ * the same height and the same text, so choosing does not reflow the page under the thumb that just chose.
  */
 @Composable
 private fun ModeCard(
@@ -943,24 +950,26 @@ private fun ModeCard(
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
-    val container by animateColorAsState(
-        if (selected) colors.primaryContainer else colors.surfaceContainerLow,
-        label = "modeContainer",
-    )
-    val border by animateColorAsState(
-        if (selected) colors.primary else colors.outlineVariant.copy(alpha = 0.5f),
-        label = "modeBorder",
-    )
+    val container by
+        animateColorAsState(
+            if (selected) colors.primaryContainer else colors.surfaceContainerLow,
+            label = "modeContainer",
+        )
+    val border by
+        animateColorAsState(
+            if (selected) colors.primary else colors.outlineVariant.copy(alpha = 0.5f),
+            label = "modeBorder",
+        )
     val onContainer = if (selected) colors.onPrimaryContainer else colors.onSurface
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(container)
-            .border(if (selected) 2.dp else 1.dp, border, RoundedCornerShape(20.dp))
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 16.dp),
+        modifier =
+            Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .background(container)
+                .border(if (selected) 2.dp else 1.dp, border, RoundedCornerShape(20.dp))
+                .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+                .padding(horizontal = 18.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
@@ -998,32 +1007,32 @@ private fun ModeCard(
 /**
  * What the chosen mode means, as answers to the three questions both modes answer.
  *
- * The two modes were described by a paragraph each, and a reader comparing them had to hold one
- * paragraph in their head while reading the other. They are really answering the same three
- * questions -- where the modules live, whether the set can change later, and where the result will
- * run -- so the questions are fixed in place and only the answers change. Switching mode now swaps
- * three values in three known positions, which is a comparison rather than a re-read.
+ * The two modes were described by a paragraph each, and a reader comparing them had to hold one paragraph in their head
+ * while reading the other. They are really answering the same three questions -- where the modules live, whether the
+ * set can change later, and where the result will run -- so the questions are fixed in place and only the answers
+ * change. Switching mode now swaps three values in three known positions, which is a comparison rather than a re-read.
  */
 @Composable
 private fun ModeComparison(mode: PatchMode) {
     val local = mode == PatchMode.Local
-    val aspects = listOf(
-        Triple(
-            Icons.Rounded.Extension,
-            R.string.patch_aspect_modules,
-            if (local) R.string.patch_aspect_modules_local else R.string.patch_aspect_modules_integrated,
-        ),
-        Triple(
-            Icons.Rounded.Tune,
-            R.string.patch_aspect_scope,
-            if (local) R.string.patch_aspect_scope_local else R.string.patch_aspect_scope_integrated,
-        ),
-        Triple(
-            Icons.Rounded.Smartphone,
-            R.string.patch_aspect_runs,
-            if (local) R.string.patch_aspect_runs_local else R.string.patch_aspect_runs_integrated,
-        ),
-    )
+    val aspects =
+        listOf(
+            Triple(
+                Icons.Rounded.Extension,
+                R.string.patch_aspect_modules,
+                if (local) R.string.patch_aspect_modules_local else R.string.patch_aspect_modules_integrated,
+            ),
+            Triple(
+                Icons.Rounded.Tune,
+                R.string.patch_aspect_scope,
+                if (local) R.string.patch_aspect_scope_local else R.string.patch_aspect_scope_integrated,
+            ),
+            Triple(
+                Icons.Rounded.Smartphone,
+                R.string.patch_aspect_runs,
+                if (local) R.string.patch_aspect_runs_local else R.string.patch_aspect_runs_integrated,
+            ),
+        )
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -1132,10 +1141,9 @@ private fun SigBypassRow(level: Int, onSelect: (Int) -> Unit) {
 /**
  * The expert flags, folded away with their current state on show.
  *
- * A disclosure rather than a separate screen: these are read far more often than they are changed,
- * and the chips answer the only question most readers have about them. The whole thing sits in the
- * same rounded container the other groups use, so a collapsed section reads as one control rather
- * than as a heading that happens to be tappable.
+ * A disclosure rather than a separate screen: these are read far more often than they are changed, and the chips answer
+ * the only question most readers have about them. The whole thing sits in the same rounded container the other groups
+ * use, so a collapsed section reads as one control rather than as a heading that happens to be tappable.
  */
 @Composable
 private fun AdvancedSection(
@@ -1146,18 +1154,12 @@ private fun AdvancedSection(
 ) {
     val rotation by animateFloatAsState(if (expanded) 180f else 0f, label = "advancedChevron")
     Column(
-        Modifier
-            .fillMaxWidth()
+        Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .animateContentSize(),
+            .animateContentSize()
     ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onToggle)
-                .padding(horizontal = 18.dp, vertical = 14.dp)
-        ) {
+        Column(Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 18.dp, vertical = 14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     Icons.Rounded.Tune,
@@ -1200,21 +1202,18 @@ private fun AdvancedSection(
 /**
  * One setting's current value.
  *
- * A changed one is tinted and a default one is not, so a glance at the row separates "this patch is
- * ordinary" from "somebody has been in here" without reading a single label.
+ * A changed one is tinted and a default one is not, so a glance at the row separates "this patch is ordinary" from
+ * "somebody has been in here" without reading a single label.
  */
 @Composable
 private fun OptionChip(chip: OptionChipData) {
     val colors = MaterialTheme.colorScheme
     val content = if (chip.changed) colors.onPrimaryContainer else colors.onSurfaceVariant
     Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(
-                if (chip.changed) colors.primaryContainer
-                else colors.surfaceContainerHighest
-            )
-            .padding(start = 7.dp, end = 10.dp, top = 5.dp, bottom = 5.dp),
+        modifier =
+            Modifier.clip(RoundedCornerShape(8.dp))
+                .background(if (chip.changed) colors.primaryContainer else colors.surfaceContainerHighest)
+                .padding(start = 7.dp, end = 10.dp, top = 5.dp, bottom = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
@@ -1236,20 +1235,21 @@ private fun OptionChip(chip: OptionChipData) {
 
 /** What the chosen signature-bypass level actually does. */
 @Composable
-private fun sigBypassDescription(level: Int) = stringResource(
-    when (level) {
-        0 -> R.string.patch_sigbypasslv0
-        1 -> R.string.patch_sigbypasslv1
-        else -> R.string.patch_sigbypasslv2
-    }
-)
+private fun sigBypassDescription(level: Int) =
+    stringResource(
+        when (level) {
+            0 -> R.string.patch_sigbypasslv0
+            1 -> R.string.patch_sigbypasslv1
+            else -> R.string.patch_sigbypasslv2
+        }
+    )
 
 /**
  * What can be done right now, and what it will cost.
  *
- * One branch per state, and every action names its own outcome rather than saying "OK": the button
- * that rebuilds an app and the button that replaces it are different acts with different
- * consequences, and the second line says which of those is about to happen.
+ * One branch per state, and every action names its own outcome rather than saying "OK": the button that rebuilds an app
+ * and the button that replaces it are different acts with different consequences, and the second line says which of
+ * those is about to happen.
  */
 @Composable
 private fun PatchBar(
@@ -1268,9 +1268,7 @@ private fun PatchBar(
         tonalElevation = 3.dp,
     ) {
         Column(
-            Modifier
-                .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 16.dp),
+            Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             when (step) {
@@ -1284,7 +1282,9 @@ private fun PatchBar(
                         OutlinedButton(
                             modifier = Modifier.weight(1f),
                             onClick = { onExport(step.files) },
-                        ) { Text(stringResource(R.string.patch_export)) }
+                        ) {
+                            Text(stringResource(R.string.patch_export))
+                        }
                         Button(modifier = Modifier.weight(1f), onClick = onInstall) {
                             Text(stringResource(R.string.patch_action_install))
                         }
@@ -1310,6 +1310,48 @@ private fun PatchBar(
                         title = stringResource(R.string.patch_status_error),
                         detail = step.reason ?: stringResource(R.string.patch_status_error_desc),
                     )
+                    // The patched apk outlives a failed install, so it can still be handed to another
+                    // installer -- offered only when this device has one that is not us, and only for
+                    // a single apk, which is what such an intent carries.
+                    val context = LocalContext.current
+                    // The patched apk outlives a failed install, so the two ways of using it anyway are
+                    // offered here: hand it to an installer this device has, or save it and install it
+                    // however the reader prefers. Each stands on its own, and a device that needs one
+                    // may need the other.
+                    val outputs by
+                        produceState(emptyList<java.io.File>(), step.request?.packageName) {
+                            val pkg = step.request?.packageName
+                            value = if (pkg == null) emptyList() else PatchOutputStore.outputs(pkg)
+                        }
+                    val handoff by
+                        produceState(emptyList<Intent>(), outputs) {
+                            value =
+                                if (outputs.isEmpty()) emptyList() else LSPPackageManager.installHandoffIntents(outputs)
+                        }
+                    val scope = rememberCoroutineScope()
+                    val snackbars = LocalSnackbarHost.current
+                    if (outputs.isNotEmpty()) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            OutlinedButton(modifier = Modifier.weight(1f), onClick = { onExport(outputs) }) {
+                                Text(stringResource(R.string.patch_export))
+                            }
+                            if (handoff.isNotEmpty()) {
+                                OutlinedButton(
+                                    modifier = Modifier.weight(1f),
+                                    onClick = {
+                                        // A refusal is reported where the press happened.
+                                        val failure = LSPPackageManager.startHandoff(context, handoff)
+                                        if (failure != null) {
+                                            scope.launch { snackbars.showSnackbar(failure) }
+                                        }
+                                    },
+                                ) {
+                                    Text(stringResource(R.string.patch_action_other_installer))
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         OutlinedButton(modifier = Modifier.weight(1f), onClick = onDone) {
                             Text(stringResource(R.string.patch_return))
@@ -1338,7 +1380,8 @@ private fun PatchBar(
                     }
                 }
 
-                is PatchStep.Preparing, is PatchStep.Running -> {
+                is PatchStep.Preparing,
+                is PatchStep.Running -> {
                     val running = step as? PatchStep.Running
                     Text(
                         text = stringResource(R.string.patch_status_patching),
@@ -1357,17 +1400,20 @@ private fun PatchBar(
                     }
                 }
 
-                is PatchStep.Installing, is PatchStep.Uninstalling, is PatchStep.Confirming,
+                is PatchStep.Installing,
+                is PatchStep.Uninstalling,
+                is PatchStep.Confirming,
                 is PatchStep.Restoring -> {
                     Text(
-                        text = stringResource(
-                            when (step) {
-                                is PatchStep.Uninstalling -> R.string.uninstalling
-                                is PatchStep.Confirming -> R.string.patch_confirming
-                                is PatchStep.Restoring -> R.string.patch_restoring
-                                else -> R.string.patch_installing
-                            }
-                        ),
+                        text =
+                            stringResource(
+                                when (step) {
+                                    is PatchStep.Uninstalling -> R.string.uninstalling
+                                    is PatchStep.Confirming -> R.string.patch_confirming
+                                    is PatchStep.Restoring -> R.string.patch_restoring
+                                    else -> R.string.patch_installing
+                                }
+                            ),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -1375,17 +1421,19 @@ private fun PatchBar(
                 }
 
                 PatchStep.Idle -> {
-                    val installed = remember(request.packageName) {
-                        LSPPackageManager.isInstalledWithoutPatch(request.packageName)
-                    }
+                    val installed =
+                        remember(request.packageName) {
+                            LSPPackageManager.isInstalledWithoutPatch(request.packageName)
+                        }
                     Text(
-                        text = stringResource(
-                            if (installed) R.string.patch_effect_uninstall
-                            else R.string.patch_effect_replace
-                        ),
+                        text =
+                            stringResource(
+                                if (installed) R.string.patch_effect_uninstall else R.string.patch_effect_replace
+                            ),
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (installed) MaterialTheme.colorScheme.error
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color =
+                            if (installed) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Button(onClick = onPatch, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(request.actionLabel()))
@@ -1397,21 +1445,24 @@ private fun PatchBar(
 }
 
 /** The verb names the outcome: a rebuild, a mode change, or a loader refresh are not "OK". */
-private fun PatchRequest.actionLabel(): Int = when (origin) {
-    PatchOrigin.New -> R.string.patch_action_patch
-    PatchOrigin.UpdateLoader -> R.string.patch_action_update_loader
-    PatchOrigin.RePatch -> when (mode) {
-        PatchMode.Local -> R.string.patch_action_repatch_local
-        PatchMode.Integrated -> R.string.patch_action_repatch_integrated
+private fun PatchRequest.actionLabel(): Int =
+    when (origin) {
+        PatchOrigin.New -> R.string.patch_action_patch
+        PatchOrigin.UpdateLoader -> R.string.patch_action_update_loader
+        PatchOrigin.RePatch ->
+            when (mode) {
+                PatchMode.Local -> R.string.patch_action_repatch_local
+                PatchMode.Integrated -> R.string.patch_action_repatch_integrated
+            }
     }
-}
 
 @Composable
 private fun patchedDetail(count: Int): String {
-    val hint = stringResource(
-        if (ShizukuApi.isPermissionGranted) R.string.patch_install_hint_shizuku
-        else R.string.patch_install_hint_system
-    )
+    val hint =
+        stringResource(
+            if (ShizukuApi.isPermissionGranted) R.string.patch_install_hint_shizuku
+            else R.string.patch_install_hint_system
+        )
     return if (count > 1) {
         stringResource(R.string.patch_patched_splits, count - 1) + "  ·  " + hint
     } else hint
@@ -1448,9 +1499,9 @@ private fun BarHeadline(
 /**
  * Asked, not assumed.
  *
- * A patched apk is signed with LSPatch's key and the original with its developer's, so Android will
- * not replace one with the other -- the old app has to go first, and its data with it. That is not
- * something to do quietly on the user's behalf while a progress bar spins.
+ * A patched apk is signed with LSPatch's key and the original with its developer's, so Android will not replace one
+ * with the other -- the old app has to go first, and its data with it. That is not something to do quietly on the
+ * user's behalf while a progress bar spins.
  */
 @Composable
 private fun UninstallConfirm(label: String, onConfirm: () -> Unit, onCancel: () -> Unit) {

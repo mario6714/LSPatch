@@ -59,6 +59,19 @@
                 android:value="continuous log monitoring for patched apps and the Xposed framework" />
         </service>
 
+        <!-- Hands one patched apk to whatever installer the device has, when neither the shell nor
+             the platform session could install it. A patched apk lives in this app's private
+             storage, so it can only travel as a granted content uri rather than as a path. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.patched"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/patched_apk_paths" />
+        </provider>
+
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"

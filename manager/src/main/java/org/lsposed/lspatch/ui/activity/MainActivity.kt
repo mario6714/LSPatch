@@ -31,6 +31,7 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.google.accompanist.navigation.animation.rememberAnimatedNavController
 import com.ramcosta.composedestinations.DestinationsNavHost
 import com.ramcosta.composedestinations.spec.Direction
+import org.lsposed.lspatch.lspApp
 import org.lsposed.lspatch.ui.appearance.LSPFloatingNavSettings
 import org.lsposed.lspatch.ui.appearance.LSPSettings
 import org.lsposed.lspatch.ui.component.ShizukuFailureDialog
@@ -72,6 +73,8 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalAnimationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Someone opened the manager, so the work the app defers until it has a reason can run.
+        lspApp.startBackgroundWork()
         enableEdgeToEdge()
         setContent {
             val navController = rememberAnimatedNavController()
