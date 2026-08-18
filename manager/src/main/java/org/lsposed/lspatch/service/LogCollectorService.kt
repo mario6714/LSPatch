@@ -24,15 +24,14 @@ import org.lsposed.lspatch.util.ShizukuApi
 /**
  * Keeps LSPatch collecting logs whenever it is alive.
  *
- * Two jobs in one service. The ongoing notification is what keeps the app's process from being
- * reaped in the background — collection is only continuous if the process that holds the Shizuku
- * binding stays up — and a supervisor loop starts the shell-side `logcat -f` collector once Shizuku
- * is granted and restarts it if it ever dies (the buffer was cleared, the logcat was killed). The
- * collector itself runs as the shell user and rotates its own files; see [ShizukuService].
+ * Two jobs in one service. The ongoing notification is what keeps the app's process from being reaped in the background
+ * — collection is only continuous if the process that holds the Shizuku binding stays up — and a supervisor loop starts
+ * the shell-side `logcat -f` collector once Shizuku is granted and restarts it if it ever dies (the buffer was cleared,
+ * the logcat was killed). The collector itself runs as the shell user and rotates its own files; see [ShizukuService].
  *
- * The service is deliberately cheap: once the collector is healthy the loop is a binder round trip
- * every few seconds that does nothing, and the notification sits at minimum importance with no
- * badge, so it is present in the shade but never intrudes.
+ * The service is deliberately cheap: once the collector is healthy the loop is a binder round trip every few seconds
+ * that does nothing, and the notification sits at minimum importance with no badge, so it is present in the shade but
+ * never intrudes.
  */
 class LogCollectorService : Service() {
 
@@ -49,7 +48,10 @@ class LogCollectorService : Service() {
         startAsForeground()
         scope.launch {
             while (isActive) {
-                if (ShizukuApi.isPermissionGranted && !ShizukuApi.isLogCollectorRunning()) {
+                // refresh() rather than ensureReady(): this tick repeats forever, and a device
+                // without Shizuku would otherwise report the same thing to the reader on a loop.
+                // The Logs screen already explains an absent Shizuku in place.
+                if (ShizukuApi.refresh() && !ShizukuApi.isLogCollectorRunning()) {
                     ShizukuApi.startLogCollector(LOG_DIR, relevantUids(this@LogCollectorService))
                 }
                 delay(CHECK_INTERVAL_MS)
@@ -64,7 +66,12 @@ class LogCollectorService : Service() {
         scope.cancel()
         // Turning monitoring off should not leave a logcat pinned to the buffer. Best effort on a
         // detached scope, since this one is already cancelled.
-        CoroutineScope(Dispatchers.IO).launch { ShizukuApi.stopLogCollector() }
+        CoroutineScope(Dispatchers.IO).launch {
+            ShizukuApi.stopLogCollector()
+            // And hand the shell process back: nothing else in the app needs it while monitoring is
+            // off, and an unbound one would sit there until the device reboots.
+            ShizukuApi.releaseUserService()
+        }
         super.onDestroy()
     }
 
@@ -108,9 +115,9 @@ class LogCollectorService : Service() {
         const val LOG_DIR = "/data/local/tmp/lspatch-logs"
 
         /**
-         * The uids whose lines belong in the framework stream: the manager itself, and every patched
-         * app and module. Each is read straight off its [android.content.pm.ApplicationInfo], so no
-         * extra PackageManager round trip is needed; the collector matches lines by these.
+         * The uids whose lines belong in the framework stream: the manager itself, and every patched app and module.
+         * Each is read straight off its [android.content.pm.ApplicationInfo], so no extra PackageManager round trip is
+         * needed; the collector matches lines by these.
          */
         fun relevantUids(context: Context): IntArray {
             // The manager's own uid is written first and the collector reads it positionally: its

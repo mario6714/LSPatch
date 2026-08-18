@@ -7,6 +7,26 @@
     <string name="shizuku_available">שירות Shizuku זמין</string>
     <string name="shizuku_unavailable">שירות Shizuku לא מחובר</string>
     <string name="shizuku_off">לא מחובר</string>
+    <string name="shizuku_failure_not_running">Shizuku אינו פועל</string>
+    <string name="shizuku_failure_lost">החיבור ל‑Shizuku אבד</string>
+    <string name="shizuku_failure_hint_lost">Shizuku פעל ו‑LSPatch איבד את החיבור אליו. פתחו מחדש את LSPatch; אם זה לא עוזר, הפעילו מחדש את Shizuku.</string>
+    <string name="shizuku_failure_not_granted">לא ניתנה גישה ל‑Shizuku</string>
+    <string name="shizuku_failure_no_service">שירות המעטפת של Shizuku אינו זמין</string>
+    <string name="shizuku_failure_call">הקריאה ל‑Shizuku נכשלה</string>
+    <string name="shizuku_failure_op_grant">כדי לבקש גישה, Shizuku עצמו חייב לפעול.</string>
+    <string name="shizuku_failure_op_install">התקנה שקטה של אפליקציה דורשת Shizuku.</string>
+    <string name="shizuku_failure_op_uninstall">הסרה שקטה של אפליקציה דורשת Shizuku.</string>
+    <string name="shizuku_failure_op_packages">קריאת החבילות המותקנות דרך המעטפת דורשת Shizuku.</string>
+    <string name="shizuku_failure_op_logs">איסוף יומני המכשיר דורש Shizuku.</string>
+    <string name="shizuku_failure_op_shell">הרצת פקודת מעטפת דורשת Shizuku.</string>
+    <string name="shizuku_failure_op_optimize">אופטימיזציה מחדש של אפליקציה דורשת Shizuku.</string>
+    <string name="shizuku_failure_hint_not_running">הפעילו את Shizuku — מהאפליקציה שלו, דרך ADB או עם הרשאות root — ונסו שוב.</string>
+    <string name="shizuku_failure_hint_not_granted">Shizuku פועל אך ל‑LSPatch אין גישה. תנו לו גישה ונסו שוב.</string>
+    <string name="shizuku_failure_hint_no_service">Shizuku מורשה, אך תהליך המעטפת שהוא מפעיל עבור LSPatch לא עלה. הפעילו מחדש את Shizuku ואז פתחו שוב את LSPatch.</string>
+    <string name="shizuku_failure_hint_call">Shizuku קיבל את הבקשה והמערכת דחתה אותה. זהו המעקב שיש לצרף לדיווח.</string>
+    <string name="shizuku_failure_view_trace">הצגת מעקב</string>
+    <string name="shizuku_failure_grant">מתן גישה</string>
+    <string name="shizuku_failure_dismiss">סגירה</string>
     <string name="error_unknown">שגיאה לא ידועה</string>
 
     <!-- Home Screen -->

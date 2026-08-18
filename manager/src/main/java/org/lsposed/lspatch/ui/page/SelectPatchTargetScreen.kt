@@ -1,5 +1,6 @@
 package org.lsposed.lspatch.ui.page
 
+import android.content.pm.PackageInstaller
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -40,6 +41,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
+import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.launch
 import org.lsposed.lspatch.R
 import org.lsposed.lspatch.data.model.PatchMode
@@ -54,32 +57,29 @@ import org.lsposed.lspatch.ui.util.LocalSnackbarHost
 import org.lsposed.lspatch.ui.viewmodel.SelectPatchTargetViewModel
 import org.lsposed.lspatch.util.LSPPackageManager
 import org.lsposed.lspatch.util.LSPPackageManager.AppInfo
-import org.lsposed.lspatch.util.ShizukuApi
 import org.matrix.vector.ui.PackageRow
 import org.matrix.vector.ui.PanelEmptyState
 import org.matrix.vector.ui.SearchField
-import android.content.pm.PackageInstaller
-import java.io.File
-import java.util.UUID
 
 // Plain apks plus app bundles: .xapk/.apks/.apkm carry no registered mime, so most file providers
 // report them as zip or octet-stream — both are allowed so a bundle can be picked and unzipped.
-internal val APK_AND_BUNDLE_TYPES = arrayOf(
-    "application/vnd.android.package-archive",
-    "application/zip",
-    "application/octet-stream",
-)
+internal val APK_AND_BUNDLE_TYPES =
+    arrayOf(
+        "application/vnd.android.package-archive",
+        "application/zip",
+        "application/octet-stream",
+    )
 
 /**
  * What to patch -- the single entry into the patch flow, from Home and from Manage alike.
  *
- * The choice used to be made by a dialog offering "an installed app" or "apk from storage", which
- * one entry point showed and the other did not. There is nothing to choose between: the installed
- * apps *are* the list, and a file from storage is one more way to name a target, so it lives as an
- * action in the bar rather than as a fork the user has to take before they can see anything.
+ * The choice used to be made by a dialog offering "an installed app" or "apk from storage", which one entry point
+ * showed and the other did not. There is nothing to choose between: the installed apps *are* the list, and a file from
+ * storage is one more way to name a target, so it lives as an action in the bar rather than as a fork the user has to
+ * take before they can see anything.
  *
- * Tapping a row is the commit. There is no confirm button, because the next screen is where the
- * patch is configured and where it can still be abandoned.
+ * Tapping a row is the commit. There is no confirm button, because the next screen is where the patch is configured and
+ * where it can still be abandoned.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Destination
@@ -97,9 +97,8 @@ fun SelectPatchTargetScreen(navigator: DestinationsNavigator) {
     var installing by remember { mutableStateOf(false) }
 
     /**
-     * Persists the request and hands over to the patch screen, replacing this one in the back
-     * stack: coming back from a patch should return where the patch was started from, not to the
-     * picker that has already served its purpose.
+     * Persists the request and hands over to the patch screen, replacing this one in the back stack: coming back from a
+     * patch should return where the patch was started from, not to the picker that has already served its purpose.
      */
     fun commit(request: PatchRequest) {
         scope.launch {
@@ -111,16 +110,15 @@ fun SelectPatchTargetScreen(navigator: DestinationsNavigator) {
     }
 
     /**
-     * Installs an already-patched apk picked from storage, then opens its page. The apk and its
-     * splits already sit in the temp dir from reading the manifest, so install is a plain session;
-     * on success the picker is left behind so Back returns to where patching was started.
+     * Installs an already-patched apk picked from storage, then opens its page. The apk and its splits already sit in
+     * the temp dir from reading the manifest, so install is a plain session; on success the picker is left behind so
+     * Back returns to where patching was started.
      */
     fun installAlreadyPatched(app: AppInfo) {
         scope.launch {
             installing = true
             val apkPaths = listOf(app.app.sourceDir) + (app.app.splitSourceDirs ?: emptyArray())
-            val (status, message) =
-                LSPPackageManager.installFiles(apkPaths.map(::File), ShizukuApi.isPermissionGranted)
+            val (status, message) = LSPPackageManager.installFiles(apkPaths.map(::File), useShizuku = true)
             installing = false
             alreadyPatched = null
             if (status == PackageInstaller.STATUS_SUCCESS) {
@@ -151,12 +149,14 @@ fun SelectPatchTargetScreen(navigator: DestinationsNavigator) {
                         commit(
                             PatchRequest(
                                 token = UUID.randomUUID().toString(),
-                                target = PatchTarget.ApkFiles(
-                                    packageName = primary.app.packageName,
-                                    label = primary.label,
-                                    apkPaths = listOf(primary.app.sourceDir) +
-                                        (primary.app.splitSourceDirs ?: emptyArray()),
-                                ),
+                                target =
+                                    PatchTarget.ApkFiles(
+                                        packageName = primary.app.packageName,
+                                        label = primary.label,
+                                        apkPaths =
+                                            listOf(primary.app.sourceDir) +
+                                                (primary.app.splitSourceDirs ?: emptyArray()),
+                                    ),
                                 mode = PatchMode.Local,
                                 origin = PatchOrigin.New,
                             )
@@ -232,17 +232,18 @@ fun SelectPatchTargetScreen(navigator: DestinationsNavigator) {
                         icon = LSPPackageManager.getIcon(app),
                         label = app.label,
                         packageName = app.app.packageName,
-                        modifier = if (patched) Modifier.alpha(0.38f)
-                        else Modifier.clickable { commit(newRequestFor(app)) },
-                        additionalContent = if (patched) {
-                            {
-                                Text(
-                                    text = stringResource(R.string.patch_target_already_patched),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                        } else null,
+                        modifier =
+                            if (patched) Modifier.alpha(0.38f) else Modifier.clickable { commit(newRequestFor(app)) },
+                        additionalContent =
+                            if (patched) {
+                                {
+                                    Text(
+                                        text = stringResource(R.string.patch_target_already_patched),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            } else null,
                     )
                 }
             }

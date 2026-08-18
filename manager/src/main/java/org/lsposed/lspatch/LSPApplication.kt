@@ -3,6 +3,7 @@ package org.lsposed.lspatch
 import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -15,7 +16,7 @@ import org.lsposed.lspatch.service.LogCollectorService
 import org.lsposed.lspatch.util.LSPPackageManager
 import org.lsposed.lspatch.util.ManagerMigrate
 import org.lsposed.lspatch.util.ShizukuApi
-import java.io.File
+import org.lsposed.lspatch.util.ShizukuDebugTrigger
 
 lateinit var lspApp: LSPApplication
 
@@ -25,9 +26,9 @@ class LSPApplication : Application() {
     lateinit var tmpApkDir: File
 
     /**
-     * Where patched apks land, one directory per package. App-private, so patching needs no storage
-     * permission and no user-chosen folder; under `noBackupFilesDir` so a multi-hundred-megabyte
-     * intermediate is never swept into a cloud backup.
+     * Where patched apks land, one directory per package. App-private, so patching needs no storage permission and no
+     * user-chosen folder; under `noBackupFilesDir` so a multi-hundred-megabyte intermediate is never swept into a cloud
+     * backup.
      */
     lateinit var patchedDir: File
 
@@ -47,6 +48,8 @@ class LSPApplication : Application() {
         patchedDir = noBackupFilesDir.resolve("patched").also { it.mkdirs() }
         prefs = lspApp.getSharedPreferences("settings", Context.MODE_PRIVATE)
         ShizukuApi.init(this)
+        // Debug builds only -- the release twin of this object does nothing.
+        ShizukuDebugTrigger.register(this)
         AppBroadcastReceiver.register(this)
         globalScope.launch { LSPPackageManager.fetchAppList() }
         // Patched output survives a crash between patching and installing, so it has to be cleared

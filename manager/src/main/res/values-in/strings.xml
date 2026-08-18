@@ -7,6 +7,26 @@
     <string name="shizuku_available">Layanan Shizuku tersedia</string>
     <string name="shizuku_unavailable">Layanan Shizuku tidak terhubung</string>
     <string name="shizuku_off">Tidak terhubung</string>
+    <string name="shizuku_failure_not_running">Shizuku tidak berjalan</string>
+    <string name="shizuku_failure_lost">Koneksi ke Shizuku terputus</string>
+    <string name="shizuku_failure_hint_lost">Shizuku sempat berjalan dan LSPatch kehilangan koneksinya. Buka lagi LSPatch; jika tidak membantu, mulai ulang Shizuku.</string>
+    <string name="shizuku_failure_not_granted">Akses Shizuku belum diberikan</string>
+    <string name="shizuku_failure_no_service">Layanan shell Shizuku tidak tersedia</string>
+    <string name="shizuku_failure_call">Panggilan Shizuku gagal</string>
+    <string name="shizuku_failure_op_grant">Untuk meminta akses, Shizuku sendiri harus berjalan.</string>
+    <string name="shizuku_failure_op_install">Memasang aplikasi secara senyap memerlukan Shizuku.</string>
+    <string name="shizuku_failure_op_uninstall">Mencopot aplikasi secara senyap memerlukan Shizuku.</string>
+    <string name="shizuku_failure_op_packages">Membaca paket terpasang lewat shell memerlukan Shizuku.</string>
+    <string name="shizuku_failure_op_logs">Mengumpulkan log perangkat memerlukan Shizuku.</string>
+    <string name="shizuku_failure_op_shell">Menjalankan perintah shell memerlukan Shizuku.</string>
+    <string name="shizuku_failure_op_optimize">Mengoptimalkan ulang aplikasi memerlukan Shizuku.</string>
+    <string name="shizuku_failure_hint_not_running">Jalankan Shizuku — dari aplikasinya, lewat ADB, atau dengan root — lalu coba lagi.</string>
+    <string name="shizuku_failure_hint_not_granted">Shizuku berjalan tetapi LSPatch tidak punya akses. Berikan aksesnya, lalu coba lagi.</string>
+    <string name="shizuku_failure_hint_no_service">Shizuku sudah diizinkan, tetapi proses shell yang dijalankannya untuk LSPatch tidak muncul. Mulai ulang Shizuku, lalu buka lagi LSPatch.</string>
+    <string name="shizuku_failure_hint_call">Shizuku menerima permintaan dan sistem menolaknya. Jejak inilah yang perlu disertakan dalam laporan.</string>
+    <string name="shizuku_failure_view_trace">Lihat jejak</string>
+    <string name="shizuku_failure_grant">Berikan akses</string>
+    <string name="shizuku_failure_dismiss">Tutup</string>
     <string name="error_unknown">Kesalahan tidak diketahui</string>
 
     <!-- Home Screen -->

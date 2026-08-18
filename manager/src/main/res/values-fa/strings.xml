@@ -7,6 +7,26 @@
     <string name="shizuku_available">سرویس Shizuku در دسترس است</string>
     <string name="shizuku_unavailable">سرویس Shizuku متصل نیست</string>
     <string name="shizuku_off">متصل نیست</string>
+    <string name="shizuku_failure_not_running">Shizuku در حال اجرا نیست</string>
+    <string name="shizuku_failure_lost">ارتباط با Shizuku قطع شد</string>
+    <string name="shizuku_failure_hint_lost">Shizuku کار می‌کرد و LSPatch ارتباطش را از دست داد. LSPatch را دوباره باز کنید؛ اگر کمکی نکرد، Shizuku را دوباره اجرا کنید.</string>
+    <string name="shizuku_failure_not_granted">دسترسی Shizuku داده نشده است</string>
+    <string name="shizuku_failure_no_service">سرویس پوسته‌ی Shizuku در دسترس نیست</string>
+    <string name="shizuku_failure_call">فراخوانی Shizuku ناموفق بود</string>
+    <string name="shizuku_failure_op_grant">برای درخواست دسترسی، خود Shizuku باید در حال اجرا باشد.</string>
+    <string name="shizuku_failure_op_install">نصب بی‌صدای برنامه به Shizuku نیاز دارد.</string>
+    <string name="shizuku_failure_op_uninstall">حذف بی‌صدای برنامه به Shizuku نیاز دارد.</string>
+    <string name="shizuku_failure_op_packages">خواندن بسته‌های نصب‌شده از راه پوسته به Shizuku نیاز دارد.</string>
+    <string name="shizuku_failure_op_logs">جمع‌آوری گزارش‌های دستگاه به Shizuku نیاز دارد.</string>
+    <string name="shizuku_failure_op_shell">اجرای فرمان پوسته به Shizuku نیاز دارد.</string>
+    <string name="shizuku_failure_op_optimize">بهینه‌سازی دوباره‌ی برنامه به Shizuku نیاز دارد.</string>
+    <string name="shizuku_failure_hint_not_running">Shizuku را اجرا کنید — از برنامه‌ی خودش، از راه ADB یا با روت — و دوباره تلاش کنید.</string>
+    <string name="shizuku_failure_hint_not_granted">Shizuku در حال اجراست اما LSPatch دسترسی ندارد. دسترسی بدهید و دوباره تلاش کنید.</string>
+    <string name="shizuku_failure_hint_no_service">دسترسی Shizuku داده شده، اما فرایند پوسته‌ای که برای LSPatch اجرا می‌کند بالا نیامد. Shizuku را دوباره اجرا کنید و سپس LSPatch را باز کنید.</string>
+    <string name="shizuku_failure_hint_call">Shizuku درخواست را پذیرفت و سامانه آن را رد کرد. همین ردیابی است که باید به گزارش پیوست شود.</string>
+    <string name="shizuku_failure_view_trace">نمایش ردیابی</string>
+    <string name="shizuku_failure_grant">اعطای دسترسی</string>
+    <string name="shizuku_failure_dismiss">بستن</string>
     <string name="error_unknown">خطای ناشناخته</string>
 
     <!-- Home Screen -->

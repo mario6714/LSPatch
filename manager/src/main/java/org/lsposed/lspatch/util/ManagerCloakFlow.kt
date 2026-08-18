@@ -14,7 +14,9 @@ object ManagerCloakFlow {
 
     sealed class Progress {
         data class Message(val text: String) : Progress()
+
         data class Success(val newPackageName: String) : Progress()
+
         data class Error(val message: String) : Progress()
     }
 
@@ -24,11 +26,12 @@ object ManagerCloakFlow {
      */
     suspend fun run(
         newPackageName: String,
-        onProgress: (Progress) -> Unit
+        onProgress: (Progress) -> Unit,
     ) {
-        suspend fun emit(progress: Progress) = withContext(Dispatchers.Main.immediate) {
-            onProgress(progress)
-        }
+        suspend fun emit(progress: Progress) =
+            withContext(Dispatchers.Main.immediate) {
+                onProgress(progress)
+            }
 
         val oldPackage = lspApp.packageName
         try {
@@ -40,29 +43,31 @@ object ManagerCloakFlow {
                 emit(Progress.Error("Package name is unchanged"))
                 return
             }
-            if (!ShizukuApi.isPermissionGranted) {
+            if (!ShizukuApi.ensureReady(ShizukuOp.Install)) {
                 emit(Progress.Error("Shizuku is required"))
                 return
             }
 
             withContext(Dispatchers.IO) {
                 emit(Progress.Message("Preparing migrate data…"))
-                val workDir = lspApp.cacheDir.resolve("cloak").also {
-                    it.deleteRecursively()
-                    it.mkdirs()
-                }
+                val workDir =
+                    lspApp.cacheDir.resolve("cloak").also {
+                        it.deleteRecursively()
+                        it.mkdirs()
+                    }
                 val migrateZip = ManagerMigrate.createMigrateZip(lspApp, workDir.resolve("migrate.zip"))
 
                 emit(Progress.Message("Rebuilding manager APK…"))
-                val cloakedApk = ManagerCloak.cloak(
-                    newPackageName,
-                    migrateZip,
-                    workDir.resolve("manager-$newPackageName.apk")
-                )
+                val cloakedApk =
+                    ManagerCloak.cloak(
+                        newPackageName,
+                        migrateZip,
+                        workDir.resolve("manager-$newPackageName.apk"),
+                    )
 
                 emit(Progress.Message("Installing cloaked manager…"))
                 val (installStatus, installMessage) =
-                    LSPPackageManager.installFiles(listOf(cloakedApk), ShizukuApi.isPermissionGranted)
+                    LSPPackageManager.installFiles(listOf(cloakedApk), useShizuku = true)
                 if (installStatus != PackageInstaller.STATUS_SUCCESS) {
                     emit(Progress.Error("Install failed: $installMessage"))
                     return@withContext
@@ -74,10 +79,12 @@ object ManagerCloakFlow {
                 emit(Progress.Message("Updating manager-mode apps…"))
                 val retarget = LocalAppsUpdater.updateAllForManager(newPackageName)
                 if (retarget.failed.isNotEmpty()) {
-                    emit(Progress.Message(
-                        "Retargeted ${retarget.updated.size}, ${retarget.failed.size} failed: " +
+                    emit(
+                        Progress.Message(
+                            "Retargeted ${retarget.updated.size}, ${retarget.failed.size} failed: " +
                                 retarget.failed.joinToString { it.first }
-                    ))
+                        )
+                    )
                 }
 
                 emit(Progress.Message("Launching new manager…"))
@@ -105,13 +112,14 @@ object ManagerCloakFlow {
     }
 
     /**
-     * Revert a cloaked manager back to [Constants.MANAGER_PACKAGE_NAME] using the latest
-     * GitHub release APK, then uninstall this (random-package) app.
+     * Revert a cloaked manager back to [Constants.MANAGER_PACKAGE_NAME] using the latest GitHub release APK, then
+     * uninstall this (random-package) app.
      */
     suspend fun revertToOriginal(onProgress: (Progress) -> Unit) {
-        suspend fun emit(progress: Progress) = withContext(Dispatchers.Main.immediate) {
-            onProgress(progress)
-        }
+        suspend fun emit(progress: Progress) =
+            withContext(Dispatchers.Main.immediate) {
+                onProgress(progress)
+            }
 
         val currentPackage = lspApp.packageName
         val original = Constants.MANAGER_PACKAGE_NAME
@@ -120,36 +128,36 @@ object ManagerCloakFlow {
                 emit(Progress.Error("Already using the original package name"))
                 return
             }
-            if (!ShizukuApi.isPermissionGranted) {
+            if (!ShizukuApi.ensureReady(ShizukuOp.Install)) {
                 emit(Progress.Error("Shizuku is required"))
                 return
             }
 
             withContext(Dispatchers.IO) {
-                val workDir = lspApp.cacheDir.resolve("cloak-revert").also {
-                    it.deleteRecursively()
-                    it.mkdirs()
-                }
+                val workDir =
+                    lspApp.cacheDir.resolve("cloak-revert").also {
+                        it.deleteRecursively()
+                        it.mkdirs()
+                    }
 
                 emit(Progress.Message("Downloading latest manager from GitHub…"))
-                val downloaded = GithubReleaseDownloader.downloadLatestManager(
-                    workDir.resolve("manager-github.apk")
-                )
+                val downloaded = GithubReleaseDownloader.downloadLatestManager(workDir.resolve("manager-github.apk"))
                 emit(Progress.Message("Downloaded ${downloaded.assetName} (${downloaded.tagName})"))
 
                 emit(Progress.Message("Preparing migrate data…"))
                 val migrateZip = ManagerMigrate.createMigrateZip(lspApp, workDir.resolve("migrate.zip"))
 
                 emit(Progress.Message("Preparing original package APK…"))
-                val stockApk = ManagerCloak.prepareStockWithMigrate(
-                    downloaded.file,
-                    migrateZip,
-                    workDir.resolve("manager-original.apk")
-                )
+                val stockApk =
+                    ManagerCloak.prepareStockWithMigrate(
+                        downloaded.file,
+                        migrateZip,
+                        workDir.resolve("manager-original.apk"),
+                    )
 
                 emit(Progress.Message("Installing original manager…"))
                 val (installStatus, installMessage) =
-                    LSPPackageManager.installFiles(listOf(stockApk), ShizukuApi.isPermissionGranted)
+                    LSPPackageManager.installFiles(listOf(stockApk), useShizuku = true)
                 if (installStatus != PackageInstaller.STATUS_SUCCESS) {
                     emit(Progress.Error("Install failed: $installMessage"))
                     return@withContext
@@ -158,10 +166,12 @@ object ManagerCloakFlow {
                 emit(Progress.Message("Updating manager-mode apps…"))
                 val retarget = LocalAppsUpdater.updateAllForManager(original)
                 if (retarget.failed.isNotEmpty()) {
-                    emit(Progress.Message(
-                        "Retargeted ${retarget.updated.size}, ${retarget.failed.size} failed: " +
+                    emit(
+                        Progress.Message(
+                            "Retargeted ${retarget.updated.size}, ${retarget.failed.size} failed: " +
                                 retarget.failed.joinToString { it.first }
-                    ))
+                        )
+                    )
                 }
 
                 emit(Progress.Message("Launching original manager…"))

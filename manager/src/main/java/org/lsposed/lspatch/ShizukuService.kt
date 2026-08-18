@@ -1,5 +1,6 @@
 package org.lsposed.lspatch
 
+import android.util.Log
 import java.io.BufferedWriter
 import java.io.File
 import java.io.FileWriter
@@ -10,6 +11,42 @@ import java.util.Locale
 import kotlin.system.exitProcess
 
 class ShizukuService : IShizukuService.Stub() {
+
+    init {
+        Log.i(TAG, "Shell service starting: pid ${android.os.Process.myPid()}, uid ${android.os.Process.myUid()}")
+        reapPreviousInstances()
+    }
+
+    /**
+     * Kills any earlier instance of this same service still running.
+     *
+     * A client that dies without unbinding -- a force-stop, a crash, an upgrade -- leaves its shell process behind:
+     * several were seen alive at once, surviving force-stops of the manager. Only a shell-uid process may kill another,
+     * and this is one, so the newest instance clears its own predecessors. The match is this process's exact name read
+     * from `/proc`, not a hardcoded package, so a renamed (cloaked) manager reaps its own strays and nothing else's.
+     */
+    private fun reapPreviousInstances() {
+        runCatching {
+            val self = android.os.Process.myPid()
+            val name = File("/proc/self/cmdline").readText().trim { it <= ' ' || it == '\u0000' }
+            if (name.isEmpty()) return
+            val ps =
+                Runtime.getRuntime()
+                    .exec(arrayOf("sh", "-c", "ps -A -o PID,NAME"))
+                    .inputStream
+                    .bufferedReader()
+                    .readText()
+            ps.lineSequence().forEach { line ->
+                val columns = line.trim().split(Regex("\\s+"))
+                if (columns.size < 2 || columns[1] != name) return@forEach
+                val pid = columns[0].toIntOrNull() ?: return@forEach
+                if (pid != self) {
+                    Log.i(TAG, "Reaping a previous instance of this service: pid $pid")
+                    android.os.Process.killProcess(pid)
+                }
+            }
+        }
+    }
 
     /**
      * The running `logcat` collector, or null. It streams to this service's own stdout, which a [readerThread] drains
@@ -26,6 +63,7 @@ class ShizukuService : IShizukuService.Stub() {
     @Volatile private var rotateRequested = false
 
     override fun runShellCommand(cmd: String): String {
+        Log.v(TAG, "runShellCommand: $cmd")
         return try {
             val process = Runtime.getRuntime().exec(cmd)
             val output = process.inputStream.bufferedReader().readText()
@@ -38,12 +76,14 @@ class ShizukuService : IShizukuService.Stub() {
             // tail: for a log dump the most recent lines are the ones worth reading.
             if (combined.length > MAX_OUTPUT_CHARS) combined.takeLast(MAX_OUTPUT_CHARS) else combined
         } catch (e: Exception) {
+            Log.w(TAG, "runShellCommand failed: $cmd", e)
             e.stackTraceToString()
         }
     }
 
     /** Runs a shell script via `sh -c`; combined stdout+stderr, tail-capped to MAX_OUTPUT_CHARS for Binder. */
     override fun runShellScript(script: String): String {
+        Log.v(TAG, "runShellScript: ${script.take(200)}")
         return try {
             val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", script))
             val output = process.inputStream.bufferedReader().readText()
@@ -52,6 +92,7 @@ class ShizukuService : IShizukuService.Stub() {
             val combined = output + error
             if (combined.length > MAX_OUTPUT_CHARS) combined.takeLast(MAX_OUTPUT_CHARS) else combined
         } catch (e: Exception) {
+            Log.w(TAG, "runShellScript failed", e)
             e.stackTraceToString()
         }
     }
@@ -65,6 +106,7 @@ class ShizukuService : IShizukuService.Stub() {
      * meaningless numeric suffixes.
      */
     override fun startLogCollector(logDir: String, relevantUids: IntArray): Boolean {
+        Log.i(TAG, "Starting the log collector in $logDir for ${relevantUids.size} uid(s)")
         return try {
             stopLogCollector()
             // Kill any stray collector a previous service instance left behind. When Shizuku respawns
@@ -224,6 +266,7 @@ class ShizukuService : IShizukuService.Stub() {
     }
 
     override fun stopLogCollector() {
+        Log.i(TAG, "Stopping the log collector")
         running = false
         runCatching { collector?.destroy() }
         collector = null
@@ -279,6 +322,7 @@ class ShizukuService : IShizukuService.Stub() {
     }
 
     override fun destroy() {
+        Log.i(TAG, "Shell service destroyed")
         stopLogCollector()
         exitProcess(0)
     }
@@ -359,6 +403,9 @@ class ShizukuService : IShizukuService.Stub() {
     }
 
     private companion object {
+        /** Its own tag, so `adb logcat -s LSPatchShell:V` follows the shell half alone. */
+        const val TAG = "LSPatchShell"
+
         const val MAX_OUTPUT_CHARS = 400_000
 
         /** ~4 MB per part, eight parts per stream — ~32 MB of history apiece at most. */

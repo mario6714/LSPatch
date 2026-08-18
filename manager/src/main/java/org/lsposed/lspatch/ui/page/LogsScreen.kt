@@ -28,7 +28,6 @@ import org.lsposed.lspatch.data.repository.LSPLogSource
 import org.lsposed.lspatch.ui.page.destinations.LogTraceScreenDestination
 import org.lsposed.lspatch.util.ShizukuApi
 import org.matrix.vector.ui.logs.LogsScreen as SharedLogsScreen
-import rikka.shizuku.Shizuku
 
 /**
  * The Logs page. A thin host over the shared `org.matrix.vector.ui.logs.LogsScreen`.
@@ -88,7 +87,7 @@ private fun ShizukuPrompt(modifier: Modifier = Modifier) {
         )
         Spacer(Modifier.height(16.dp))
         FilledTonalButton(
-            onClick = { if (ShizukuApi.isBinderAvailable) Shizuku.requestPermission(114514) }
+            onClick = { ShizukuApi.requestPermission() }
         ) {
             Text(stringResource(R.string.logs_grant))
         }

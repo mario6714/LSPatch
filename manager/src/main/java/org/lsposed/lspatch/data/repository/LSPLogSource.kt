@@ -152,6 +152,9 @@ class LSPLogSource(private val context: Context) : LogSource {
                 }
 
                 entry("device.txt", deviceReport())
+                // First, and written by the app itself rather than through the shell: when Shizuku is the thing that
+                // is broken, every other entry below is empty, and this one is the whole report.
+                entry("shizuku.txt", shizukuReport())
                 entry("packages.txt", packageReport())
                 // A verbatim copy of the module/scope database (the app owns it, so no shell is
                 // needed), the way Vector's report ships modules_config.db. The -wal/-shm side
@@ -178,6 +181,29 @@ class LSPLogSource(private val context: Context) : LogSource {
                 entry("getprop.txt", ShizukuApi.runShellCommand("getprop"))
                 entry("ps.txt", ShizukuApi.runShellCommand("ps -A -o PID,PPID,USER,NAME"))
             }
+        }
+    }
+
+    /**
+     * What Shizuku is doing, and everything it refused this session — traces included.
+     *
+     * The app's own record, not the shell's: it is the one part of the archive that survives a Shizuku that never
+     * worked, which is exactly the report that is hardest to answer without it.
+     */
+    private fun shizukuReport(): String = buildString {
+        val granted = ShizukuApi.refresh()
+        appendLine("Granted: $granted")
+        appendLine("Binder available: ${ShizukuApi.isBinderAvailable}")
+        appendLine("Server API: ${ShizukuApi.serverVersion() ?: "-"}")
+        appendLine("Server uid: ${ShizukuApi.serverUid() ?: "-"}")
+        appendLine("Shell service bound: ${ShizukuApi.isShellServiceBound}")
+        val failures = ShizukuApi.recentFailures()
+        appendLine()
+        appendLine("Failures: ${failures.size}")
+        failures.forEach { failure ->
+            appendLine()
+            appendLine("[${failure.op}] ${failure.reason}: ${failure.detail}")
+            failure.trace?.let { appendLine(it.trimEnd()) }
         }
     }
 

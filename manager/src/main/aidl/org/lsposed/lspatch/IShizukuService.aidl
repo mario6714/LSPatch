@@ -4,8 +4,13 @@ interface IShizukuService {
     // Executes a single program (no shell: no pipes, globs or redirects) and returns its output.
     String runShellCommand(String cmd) = 1;
 
-    // Allows closing the service from the client side
-    void destroy() = 2;
+    // Shizuku's own teardown, and the only one there is: on unbind (or when a non-daemon service's
+    // client dies) the server one-way transacts this exact code and nothing else -- it never signals
+    // or kills the process. The id is therefore fixed by Shizuku, not ours to choose:
+    // ShizukuApiConstants.USER_SERVICE_TRANSACTION_destroy is 16777115, which is 16777114 written as
+    // an aidl offset from FIRST_CALL_TRANSACTION. Any other id leaves the shell process running for
+    // the rest of the boot.
+    void destroy() = 16777114;
 
     // Runs [script] through `sh -c`, so globs, loops and redirects work — used to gather the export
     // archive (tombstones, anr, …). Output is tail-capped like runShellCommand.
