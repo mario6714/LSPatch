@@ -182,13 +182,16 @@ class ShizukuService : IShizukuService.Stub() {
     private val OWN_TAGS =
         setOf(
             "LSPatch",
-            "LSPatch-Bridge",
-            "LSPosed",
-            "LSPosed-Bridge",
+            "LSPatch-XposedService",
             "AppBroadcastReceiver",
             "ConfigManager",
+            "GithubReleaseDownloader",
             "LSPPackageManager",
+            "LocalAppsUpdater",
             "ManageViewModel",
+            "ManagerCloak",
+            "ManagerCloakFlow",
+            "ManagerMigrate",
             "ManagerService",
             "ModuleDetection",
             "ModuleManageViewModel",
@@ -199,8 +202,6 @@ class ShizukuService : IShizukuService.Stub() {
             "PatchOutputStore",
             "PatchRequestStore",
             "RepoRepository",
-            "ShizukuService",
-            "LogCollectorService",
         )
 
     /** The uid a pid runs as, read from /proc; -1 when it cannot be resolved (already gone). */

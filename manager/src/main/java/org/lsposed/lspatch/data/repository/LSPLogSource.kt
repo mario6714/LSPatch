@@ -263,23 +263,34 @@ class LSPLogSource(private val context: Context) : LogSource {
         // framework/crash lines out of any recent `-t N` window, so the source-side tag filter keeps
         // logcat from ever buffering the noise. The collector itself captures everything and the
         // framework stream is derived on read.
+        //
+        // The tags mirror what Vector's daemon routes to its module log (core .../logcat.cpp),
+        // pared to the runtime a rootless, injected app actually hosts: LSPatch's own loader, the
+        // native hook engine, and Vector's in-process framework classes. logcat's -s filterspec
+        // matches tags exactly, so each is spelled out. Vector's daemon-only tags never appear
+        // in a rootless, injected process, so they are left off.
         val LOG_FILTERSPEC =
             buildList {
                     for (tag in
                         listOf(
                             "LSPatch",
+                            "LSPatch-HotReload",
+                            "LSPatch-SigBypass",
                             "LSPlant",
-                            "LSPosed",
-                            "XposedBridge",
-                            "Xposed",
+                            "Vector",
                             "VectorNative",
-                            "VectorModuleManager",
-                            "VectorLifecycleManager",
-                            "VectorBootstrap",
                             "VectorContext",
-                            "VectorStartup",
-                            "VectorService",
-                            "VectorDaemon",
+                            "VectorDeopter",
+                            "VectorLegacyBridge",
+                            "VectorLifecycle",
+                            "VectorModuleClassLoader",
+                            "VectorModuleManager",
+                            "VectorProcessChannel",
+                            "VectorServiceClient",
+                            "XSharedPreferences",
+                            "XposedProvider",
+                            "XposedServiceHelper",
+                            "RemotePreferences",
                         )) add("$tag:V")
                     add("AndroidRuntime:E") // uncaught-exception stack traces
                     add("libc:F") // native fatal signals
