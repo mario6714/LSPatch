@@ -6,9 +6,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,24 +22,21 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Api
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.SettingsBackupRestore
-import androidx.compose.material.icons.rounded.WorkOutline
-import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.RemoveModerator
-import androidx.compose.material.icons.rounded.Upgrade
 import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.SettingsBackupRestore
+import androidx.compose.material.icons.rounded.Upgrade
+import androidx.compose.material.icons.rounded.WorkOutline
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,14 +56,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -71,12 +71,12 @@ import com.ramcosta.composedestinations.annotation.Destination
 import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import com.ramcosta.composedestinations.result.NavResult
 import com.ramcosta.composedestinations.result.ResultRecipient
+import java.io.File
 import kotlinx.coroutines.launch
 import org.lsposed.lspatch.R
 import org.lsposed.lspatch.data.model.ModuleRef
 import org.lsposed.lspatch.data.model.PatchMode
 import org.lsposed.lspatch.data.model.PatchOrigin
-import org.lsposed.lspatch.data.model.labelRes
 import org.lsposed.lspatch.data.repository.PatchJobHost
 import org.lsposed.lspatch.share.Constants
 import org.lsposed.lspatch.share.LSPConfig
@@ -94,19 +94,17 @@ import org.matrix.vector.ui.ModuleRow
 import org.matrix.vector.ui.PanelEmptyState
 import org.matrix.vector.ui.SharedAlertDialog
 import org.matrix.vector.ui.theme.Mono
-import java.io.File
 
 /**
  * One patched app, and everything that can be done to it.
  *
- * Opened by tapping a row in Manage; the action sheet that used to open on tap is now the
- * long-press. A sheet is the right shape for a handful of one-shot OS actions and the wrong shape
- * for the thing people actually come here to do, which is to look at what a patched app is running
- * and change it -- that needs a list, room to read a module's description, and a way to review a
- * change before committing it.
+ * Opened by tapping a row in Manage; the action sheet that used to open on tap is now the long-press. A sheet is the
+ * right shape for a handful of one-shot OS actions and the wrong shape for the thing people actually come here to do,
+ * which is to look at what a patched app is running and change it -- that needs a list, room to read a module's
+ * description, and a way to review a change before committing it.
  *
- * It opens on a hero -- the app's face, name, and status chips -- then the mode banner that says
- * what editing its modules will cost, the module list, the actions, and the patch details.
+ * It opens on a hero -- the app's face, name, and status chips -- then the mode banner that says what editing its
+ * modules will cost, the module list, the actions, and the patch details.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Destination
@@ -136,6 +134,7 @@ fun AppDetailScreen(
     val applyFailed = stringResource(R.string.appdetail_scope_failed)
     val notAModule = stringResource(R.string.patch_module_not_a_module)
     val busyMessage = stringResource(R.string.patch_busy)
+    val forceStopDone = stringResource(R.string.manage_forcestop_done)
 
     modulesRecipient.onNavResult { result ->
         if (result is NavResult.Value) {
@@ -199,15 +198,16 @@ fun AppDetailScreen(
             ) {
                 ApplyBar(
                     pending = pending.added to pending.removed,
-                    effect = stringResource(
-                        if (mode == PatchMode.Local) R.string.appdetail_effect_local
-                        else R.string.appdetail_effect_integrated,
-                        app.label,
-                    ),
-                    verb = stringResource(
-                        if (mode == PatchMode.Local) R.string.appdetail_apply
-                        else R.string.manage_repatch
-                    ),
+                    effect =
+                        stringResource(
+                            if (mode == PatchMode.Local) R.string.appdetail_effect_local
+                            else R.string.appdetail_effect_integrated,
+                            app.label,
+                        ),
+                    verb =
+                        stringResource(
+                            if (mode == PatchMode.Local) R.string.appdetail_apply else R.string.manage_repatch
+                        ),
                     onDiscard = { viewModel.discard() },
                     onApply = {
                         if (mode == PatchMode.Local) {
@@ -222,11 +222,12 @@ fun AppDetailScreen(
                                     snackbarHost.showSnackbar(busyMessage)
                                     return@launch
                                 }
-                                val modules = viewModel.draftedBindings().mapNotNull { binding ->
-                                    binding.apkPath?.let {
-                                        ModuleRef(binding.packageName, it, binding.origin)
+                                val modules =
+                                    viewModel.draftedBindings().mapNotNull { binding ->
+                                        binding.apkPath?.let {
+                                            ModuleRef(binding.packageName, it, binding.origin)
+                                        }
                                     }
-                                }
                                 beginPatch(
                                     rePatchRequestFor(app, mode = PatchMode.Integrated, modules = modules),
                                     navigator,
@@ -265,19 +266,23 @@ fun AppDetailScreen(
             // deferred to the next start, and an Integrated one costs a rebuild.
             item {
                 ModeBanner(
-                    text = stringResource(
-                        if (mode == PatchMode.Local) R.string.appdetail_local_note
-                        else R.string.appdetail_integrated_note,
-                        app.label,
-                    ),
-                    tone = if (mode == PatchMode.Local) MaterialTheme.colorScheme.secondary
-                    else MaterialTheme.colorScheme.tertiary,
-                    actionLabel = if (mode == PatchMode.Local && ShizukuApi.isPermissionGranted)
-                        stringResource(R.string.manage_forcestop) else null,
+                    text =
+                        stringResource(
+                            if (mode == PatchMode.Local) R.string.appdetail_local_note
+                            else R.string.appdetail_integrated_note,
+                            app.label,
+                        ),
+                    tone =
+                        if (mode == PatchMode.Local) MaterialTheme.colorScheme.secondary
+                        else MaterialTheme.colorScheme.tertiary,
+                    actionLabel =
+                        if (mode == PatchMode.Local && ShizukuApi.isPermissionGranted)
+                            stringResource(R.string.manage_forcestop)
+                        else null,
                     onAction = {
                         scope.launch {
                             ShizukuApi.runShellCommand("am force-stop ${app.app.packageName}")
-                            snackbarHost.showSnackbar(context.getString(R.string.manage_forcestop_done))
+                            snackbarHost.showSnackbar(forceStopDone)
                         }
                     },
                 )
@@ -323,9 +328,10 @@ fun AppDetailScreen(
                             // could not be read out of the host. Dimming "not selected" would grey
                             // out most of a long list and say nothing.
                             dimmed = !module.usable,
-                            note = if (!module.usable) {
-                                { Text(stringResource(R.string.patch_module_unreadable)) }
-                            } else null,
+                            note =
+                                if (!module.usable) {
+                                    { Text(stringResource(R.string.patch_module_unreadable)) }
+                                } else null,
                             onClick = { if (module.usable) viewModel.toggle(module.packageName) },
                             onIconClick = { if (module.usable) viewModel.toggle(module.packageName) },
                         )
@@ -346,7 +352,9 @@ fun AppDetailScreen(
                         icon = Icons.Rounded.FolderOpen,
                         title = stringResource(R.string.patch_modules_add_storage),
                         subtitle = null,
-                    ) { storageLauncher.launch(APK_AND_BUNDLE_TYPES) }
+                    ) {
+                        storageLauncher.launch(APK_AND_BUNDLE_TYPES)
+                    }
                 }
             } else {
                 item {
@@ -355,11 +363,7 @@ fun AppDetailScreen(
                         title = stringResource(R.string.patch_modules_add_installed),
                         subtitle = stringResource(R.string.manage_module_scope_desc),
                     ) {
-                        navigator.navigate(
-                            SelectModulesScreenDestination(
-                                initialSelected = ArrayList(viewModel.draft)
-                            )
-                        )
+                        navigator.navigate(SelectModulesScreenDestination(initialSelected = ArrayList(viewModel.draft)))
                     }
                 }
             }
@@ -367,68 +371,75 @@ fun AppDetailScreen(
             item {
                 DetailSectionLabel(stringResource(R.string.appdetail_actions), Icons.Rounded.AutoAwesome)
                 DetailCard {
-                ActionDrawerItem(
-                    icon = Icons.Rounded.AutoAwesome,
-                    title = stringResource(R.string.manage_repatch),
-                    subtitle = stringResource(R.string.manage_repatch_desc),
-                ) {
-                    scope.launch {
-                        if (PatchJobHost.busy) {
-                            snackbarHost.showSnackbar(busyMessage)
-                            return@launch
-                        }
-                        beginPatch(rePatchRequestFor(app), navigator)
-                    }
-                }
-                val loaderBehind = config != null &&
-                    !(config.useManager && config.lspConfig.VERSION_CODE >= Constants.MIN_ROLLING_VERSION_CODE) &&
-                    config.lspConfig.VERSION_CODE < LSPConfig.instance.VERSION_CODE
-                if (loaderBehind) {
                     ActionDrawerItem(
-                        icon = Icons.Rounded.Upgrade,
-                        title = stringResource(R.string.manage_update_loader),
-                        subtitle = stringResource(R.string.manage_update_loader_desc),
+                        icon = Icons.Rounded.AutoAwesome,
+                        title = stringResource(R.string.manage_repatch),
+                        subtitle = stringResource(R.string.manage_repatch_desc),
                     ) {
                         scope.launch {
                             if (PatchJobHost.busy) {
                                 snackbarHost.showSnackbar(busyMessage)
                                 return@launch
                             }
-                            // The same routine as a re-patch, so it inherits the stepped progress
-                            // view instead of the blank modal spinner it used to show.
-                            beginPatch(
-                                rePatchRequestFor(app, origin = PatchOrigin.UpdateLoader),
-                                navigator,
-                            )
+                            beginPatch(rePatchRequestFor(app), navigator)
                         }
                     }
-                }
-                ActionDrawerItem(
-                    icon = Icons.Rounded.Save,
-                    title = stringResource(R.string.patch_export),
-                    subtitle = stringResource(R.string.manage_export_desc),
-                ) {
-                    val apks = listOf(File(app.app.sourceDir)) +
-                        (app.app.splitSourceDirs?.map { File(it) } ?: emptyList())
-                    exporter.export(app.label, apks)
-                }
-                HorizontalDivider(Modifier.padding(horizontal = 24.dp, vertical = 4.dp))
-                ActionDrawerItem(
-                    icon = Icons.Rounded.SettingsBackupRestore,
-                    title = stringResource(R.string.manage_restore_original),
-                    subtitle = stringResource(R.string.manage_restore_desc),
-                    tint = MaterialTheme.colorScheme.error,
-                ) { showRestore = true }
+                    val loaderBehind =
+                        config != null &&
+                            !(config.useManager &&
+                                config.lspConfig.VERSION_CODE >= Constants.MIN_ROLLING_VERSION_CODE) &&
+                            config.lspConfig.VERSION_CODE < LSPConfig.instance.VERSION_CODE
+                    if (loaderBehind) {
+                        ActionDrawerItem(
+                            icon = Icons.Rounded.Upgrade,
+                            title = stringResource(R.string.manage_update_loader),
+                            subtitle = stringResource(R.string.manage_update_loader_desc),
+                        ) {
+                            scope.launch {
+                                if (PatchJobHost.busy) {
+                                    snackbarHost.showSnackbar(busyMessage)
+                                    return@launch
+                                }
+                                // The same routine as a re-patch, so it inherits the stepped progress
+                                // view instead of the blank modal spinner it used to show.
+                                beginPatch(
+                                    rePatchRequestFor(app, origin = PatchOrigin.UpdateLoader),
+                                    navigator,
+                                )
+                            }
+                        }
+                    }
+                    ActionDrawerItem(
+                        icon = Icons.Rounded.Save,
+                        title = stringResource(R.string.patch_export),
+                        subtitle = stringResource(R.string.manage_export_desc),
+                    ) {
+                        val apks =
+                            listOf(File(app.app.sourceDir)) + (app.app.splitSourceDirs?.map { File(it) } ?: emptyList())
+                        exporter.export(app.label, apks)
+                    }
+                    HorizontalDivider(Modifier.padding(horizontal = 24.dp, vertical = 4.dp))
+                    ActionDrawerItem(
+                        icon = Icons.Rounded.SettingsBackupRestore,
+                        title = stringResource(R.string.manage_restore_original),
+                        subtitle = stringResource(R.string.manage_restore_desc),
+                        tint = MaterialTheme.colorScheme.error,
+                    ) {
+                        showRestore = true
+                    }
                 }
             }
 
             item {
                 DetailSectionLabel(stringResource(R.string.appdetail_info), Icons.Rounded.Info)
-                val appVersion = remember(app.app.packageName) {
-                    runCatching {
-                        context.packageManager.getPackageInfo(app.app.packageName, 0).versionName
-                    }.getOrNull().orEmpty()
-                }
+                val appVersion =
+                    remember(app.app.packageName) {
+                        runCatching {
+                            context.packageManager.getPackageInfo(app.app.packageName, 0).versionName
+                        }
+                            .getOrNull()
+                            .orEmpty()
+                    }
                 DetailCard {
                     InfoRow(stringResource(R.string.appdetail_info_package), app.app.packageName)
                     InfoRow(stringResource(R.string.appdetail_info_app_version), appVersion)
@@ -507,7 +518,9 @@ fun AppDetailScreen(
                         leaveAsked = true
                         navigator.navigateUp()
                     }
-                ) { Text(stringResource(R.string.appdetail_leave_discard)) }
+                ) {
+                    Text(stringResource(R.string.appdetail_leave_discard))
+                }
             },
             dismissButton = {
                 TextButton(onClick = { showLeave = false }) {
@@ -519,15 +532,14 @@ fun AppDetailScreen(
 }
 
 @Composable
-private fun yesNo(value: Boolean) =
-    stringResource(if (value) R.string.appdetail_yes else R.string.appdetail_no)
+private fun yesNo(value: Boolean) = stringResource(if (value) R.string.appdetail_yes else R.string.appdetail_no)
 
 /**
  * The app's identity and its status at a glance.
  *
- * Its face, its name, and the four facts that decide what the rest of the page can do -- what mode
- * it is in, which loader it carries, how it bypasses signatures, and how many modules it reaches --
- * as chips, so the page opens on the app rather than on a heading.
+ * Its face, its name, and the four facts that decide what the rest of the page can do -- what mode it is in, which
+ * loader it carries, how it bypasses signatures, and how many modules it reaches -- as chips, so the page opens on the
+ * app rather than on a heading.
  */
 @Composable
 private fun AppHero(
@@ -539,12 +551,11 @@ private fun AppHero(
 ) {
     val colors = MaterialTheme.colorScheme
     Column(
-        Modifier
-            .fillMaxWidth()
+        Modifier.fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 12.dp)
             .clip(RoundedCornerShape(24.dp))
             .background(colors.surfaceContainerLow)
-            .padding(20.dp),
+            .padding(20.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
@@ -584,7 +595,11 @@ private fun AppHero(
                 strong = true,
             )
             if (loader != null) {
-                HeroChip(Icons.Rounded.Dns, stringResource(R.string.appdetail_info_loader) + " " + loader, colors.primary)
+                HeroChip(
+                    Icons.Rounded.Dns,
+                    stringResource(R.string.appdetail_info_loader) + " " + loader,
+                    colors.primary,
+                )
             }
             HeroChip(Icons.Rounded.RemoveModerator, "lv" + sigBypassLevel, colors.primary)
             if (moduleCount > 0) {
@@ -598,10 +613,10 @@ private fun AppHero(
 @Composable
 private fun HeroChip(icon: ImageVector, text: String, tone: Color, strong: Boolean = false) {
     Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (strong) tone.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceContainerHighest)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+        modifier =
+            Modifier.clip(RoundedCornerShape(10.dp))
+                .background(if (strong) tone.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceContainerHighest)
+                .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
@@ -623,19 +638,18 @@ private fun HeroChip(icon: ImageVector, text: String, tone: Color, strong: Boole
 /**
  * What editing this app's modules will cost, tinted by mode.
  *
- * A banner rather than the grey status note it replaced: the difference between "applies next start"
- * and "rebuilds and reinstalls" is the single most important thing on the page, and should read as a
- * statement, not a footnote.
+ * A banner rather than the grey status note it replaced: the difference between "applies next start" and "rebuilds and
+ * reinstalls" is the single most important thing on the page, and should read as a statement, not a footnote.
  */
 @Composable
 private fun ModeBanner(text: String, tone: Color, actionLabel: String?, onAction: () -> Unit) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(tone.copy(alpha = 0.10f))
-            .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 8.dp),
+        modifier =
+            Modifier.fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 4.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(tone.copy(alpha = 0.10f))
+                .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.Rounded.Info, contentDescription = null, tint = tone, modifier = Modifier.size(18.dp))
@@ -674,8 +688,7 @@ private fun DetailSectionLabel(text: String, icon: ImageVector) {
 @Composable
 private fun DetailCard(content: @Composable ColumnScope.() -> Unit) {
     Column(
-        Modifier
-            .fillMaxWidth()
+        Modifier.fillMaxWidth()
             .padding(horizontal = 20.dp)
             .clip(RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerLow),
@@ -715,9 +728,8 @@ private fun InfoRow(label: String, value: String, last: Boolean = false) {
 /**
  * The pending edit, what applying it will do, and the two ways out.
  *
- * Only the verb and the sentence differ between the modes -- "Apply" against a database write that
- * lands on the app's next start, "Re-patch" against a rebuild and a reinstall. The shape is the same
- * because the decision is the same one.
+ * Only the verb and the sentence differ between the modes -- "Apply" against a database write that lands on the app's
+ * next start, "Re-patch" against a rebuild and a reinstall. The shape is the same because the decision is the same one.
  */
 @Composable
 private fun ApplyBar(
@@ -732,9 +744,7 @@ private fun ApplyBar(
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         Row(
-            modifier = Modifier
-                .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+            modifier = Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
@@ -758,8 +768,8 @@ private fun ApplyBar(
 }
 
 /**
- * Restoring is not undoable and costs the app's data. The dialog says so in full, in plain terms,
- * including *why* -- the signatures differ, so Android cannot swap one build for the other.
+ * Restoring is not undoable and costs the app's data. The dialog says so in full, in plain terms, including *why* --
+ * the signatures differ, so Android cannot swap one build for the other.
  */
 @Composable
 private fun RestoreConfirm(label: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
