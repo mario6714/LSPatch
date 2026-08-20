@@ -43,8 +43,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.parcelize.Parcelize
 import me.zhanghai.android.appiconloader.AppIconLoader
-import org.lsposed.lspatch.config.Configs
 import org.lsposed.lspatch.config.ConfigManager
+import org.lsposed.lspatch.config.Configs
 import org.lsposed.lspatch.config.MyKeyStore
 import org.lsposed.lspatch.data.model.ModuleBinding
 import org.lsposed.lspatch.data.model.ModuleOrigin
@@ -268,8 +268,8 @@ object LSPPackageManager {
      * So no file is ever written where a file already is. A new version of the host apk unpacks into a directory of its
      * own, and within a directory the copy lands on a staging name and is moved into place, so a file that exists at
      * all is a whole one and can be read again rather than written again. Nothing here deletes: what an unpacking
-     * returns is a set of paths its caller goes on holding, and a directory this left behind is swept at the next
-     * start by [sweepEmbeddedModules], where no one holds a path into it yet.
+     * returns is a set of paths its caller goes on holding, and a directory this left behind is swept at the next start
+     * by [sweepEmbeddedModules], where no one holds a path into it yet.
      */
     private fun unpackEmbeddedModules(pkg: String, apkPath: String, stamp: String): List<ModuleBinding> {
         val root = lspApp.cacheDir.resolve("embedded-modules").resolve(pkg)
@@ -767,13 +767,12 @@ object LSPPackageManager {
     }
 
     /**
-     * Whether an already-installed [packageName] would have to be uninstalled before [patchedApk] can replace it —
-     * i.e. Android would reject the update because the signing certificates differ.
+     * Whether an already-installed [packageName] would have to be uninstalled before [patchedApk] can replace it — i.e.
+     * Android would reject the update because the signing certificates differ.
      *
-     * This compares the actual signers rather than assuming any non-LSPatch build clashes: a user signing with a
-     * custom keystore that matches the installed app produces a patched apk Android will accept as an in-place
-     * update, and that case must not be sent to the uninstall prompt. Signers are readable by any app, so no Shizuku
-     * is involved.
+     * This compares the actual signers rather than assuming any non-LSPatch build clashes: a user signing with a custom
+     * keystore that matches the installed app produces a patched apk Android will accept as an in-place update, and
+     * that case must not be sent to the uninstall prompt. Signers are readable by any app, so no Shizuku is involved.
      *
      * Returns false when nothing is installed under that name (a clean install). Only when a signature cannot be read
      * on either side does it fall back to [isInstalledWithoutPatch], so an undetermined case still errs toward asking
@@ -823,23 +822,23 @@ object LSPPackageManager {
     }
 
     /** The signing certificate of the selected keystore as a [Signature]; null when it cannot be read. */
-    private fun selectedKeystoreSigner(): Signature? =
-        runCatching {
-            val keyStore = java.security.KeyStore.getInstance(java.security.KeyStore.getDefaultType())
-            val cert =
-                if (MyKeyStore.useDefault) {
-                    (lspApp.classLoader.getResourceAsStream("assets/keystore") ?: return null).use {
-                        keyStore.load(it, "123456".toCharArray())
-                    }
-                    keyStore.getCertificate("key0")
-                } else {
-                    java.io.FileInputStream(MyKeyStore.file).use {
-                        keyStore.load(it, Configs.keyStorePassword.toCharArray())
-                    }
-                    keyStore.getCertificate(Configs.keyStoreAlias)
+    private fun selectedKeystoreSigner(): Signature? = runCatching {
+        val keyStore = java.security.KeyStore.getInstance(java.security.KeyStore.getDefaultType())
+        val cert =
+            if (MyKeyStore.useDefault) {
+                (lspApp.classLoader.getResourceAsStream("assets/keystore") ?: return null).use {
+                    keyStore.load(it, "123456".toCharArray())
                 }
-            cert?.let { Signature(it.encoded) }
-        }.getOrNull()
+                keyStore.getCertificate("key0")
+            } else {
+                java.io.FileInputStream(MyKeyStore.file).use {
+                    keyStore.load(it, Configs.keyStorePassword.toCharArray())
+                }
+                keyStore.getCertificate(Configs.keyStoreAlias)
+            }
+        cert?.let { Signature(it.encoded) }
+    }
+        .getOrNull()
 
     /**
      * Drives one platform-installer action (install/uninstall) to completion. Registers a result receiver, hands the

@@ -447,12 +447,14 @@ class LSPLogSource(private val context: Context) : LogSource {
     /**
      * This process's own log as the shared screen's content, read once per panel visit.
      *
-     * Cached because reading it spawns `logcat` (see [ownProcessLog]) and the live-tail re-calls
-     * [open] every couple of seconds; without the cache the consent dialog could re-appear on each
-     * poll. Null when even the own log cannot be read -- reported as unreachable rather than empty.
+     * Cached because reading it spawns `logcat` (see [ownProcessLog]) and the live-tail re-calls [open] every couple of
+     * seconds; without the cache the consent dialog could re-appear on each poll. Null when even the own log cannot be
+     * read -- reported as unreachable rather than empty.
      */
     private suspend fun ownProcessFallback(): Result<LogContent?> {
-        ownProcessSnapshot?.let { return Result.success(it) }
+        ownProcessSnapshot?.let {
+            return Result.success(it)
+        }
         val own =
             withContext(Dispatchers.IO) { ownProcessLog() }
                 ?: return Result.failure(IOException("the device log is not readable without Shizuku"))
@@ -463,11 +465,10 @@ class LSPLogSource(private val context: Context) : LogSource {
     /**
      * This process's own log, read without the shell.
      *
-     * `logcat` hands an app the entries of its own uid and no others, and `--pid` narrows that to
-     * this process -- but on Android 13+ the `logcat` binary must hold READ_LOGS to open the log
-     * socket before it applies any filter, so spawning it at all prompts the system for device-log
-     * access. Run in-process rather than through the shell service, because the whole point is that
-     * the shell service is what is missing.
+     * `logcat` hands an app the entries of its own uid and no others, and `--pid` narrows that to this process -- but
+     * on Android 13+ the `logcat` binary must hold READ_LOGS to open the log socket before it applies any filter, so
+     * spawning it at all prompts the system for device-log access. Run in-process rather than through the shell
+     * service, because the whole point is that the shell service is what is missing.
      */
     private fun ownProcessLog(): String? = runCatching {
         // `-v uid` here too: an entry parsed without that column has no writer to select by, and the
@@ -542,9 +543,9 @@ class LSPLogSource(private val context: Context) : LogSource {
         /**
          * How long [open] waits for a starting Shizuku before falling back to the own-process log.
          *
-         * Shizuku's binder is published very early, so this is short: long enough to cover the launch
-         * race when the Logs panel is opened at once, short enough that a device with no Shizuku is
-         * not left spinning before it shows what it can.
+         * Shizuku's binder is published very early, so this is short: long enough to cover the launch race when the
+         * Logs panel is opened at once, short enough that a device with no Shizuku is not left spinning before it shows
+         * what it can.
          */
         const val STARTUP_GRACE_MS = 1_500L
 
@@ -676,9 +677,7 @@ private val JAVA_MORE = Regex("""^\s*\.\.\. \d+ more$""")
  * written as a list of what belongs goes stale, and every heading it has not heard of splits one crash into two rows.
  */
 private fun opensCrash(message: String): Boolean =
-    message.startsWith("*** ") ||
-        message.startsWith("Fatal signal ") ||
-        message.startsWith("FATAL EXCEPTION")
+    message.startsWith("*** ") || message.startsWith("Fatal signal ") || message.startsWith("FATAL EXCEPTION")
 
 /**
  * Whether [message] is a frame of a Java stack trace.
