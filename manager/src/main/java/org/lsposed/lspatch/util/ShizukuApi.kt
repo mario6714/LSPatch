@@ -131,6 +131,12 @@ object ShizukuApi {
     // This allows us to "await" the service connection
     private var userServiceDeferred = CompletableDeferred<IShizukuService>()
 
+    // The raw binder a death recipient is linked to, and that recipient -- kept so the link can be
+    // undone on release. Shizuku does not reliably deliver onServiceDisconnected when the shell
+    // process dies, so the binder's own death is the signal that always arrives.
+    @Volatile private var linkedBinder: IBinder? = null
+    @Volatile private var serviceDeath: IBinder.DeathRecipient? = null
+
     private val userServiceConnection =
         object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName, service: IBinder) {
@@ -138,16 +144,57 @@ object ShizukuApi {
                 binding = false
                 val binder = IShizukuService.Stub.asInterface(service)
                 userService = binder
+                linkServiceDeath(service)
                 userServiceDeferred.complete(binder)
             }
 
             override fun onServiceDisconnected(name: ComponentName) {
                 Log.w(TAG, "Shell service disconnected")
                 binding = false
+                unlinkServiceDeath()
                 userService = null
                 userServiceDeferred = CompletableDeferred()
             }
         }
+
+    /**
+     * Notices the shell process dying even when Shizuku does not call [ServiceConnection.onServiceDisconnected].
+     *
+     * A death that goes unseen leaves a dead reference in [userService], and [bindUserService]'s
+     * "already bound" guard then never replaces it: a granted Shizuku whose shell answers nothing
+     * until the app is restarted. Linking to the binder itself is the signal that always arrives.
+     *
+     * The recipient only clears the state; it does not rebind, so a process that dies the instant it
+     * starts cannot spin a bind/die loop that leaks a shell process each round. The next [refresh]
+     * (the log collector's supervisor ticks one) or the next [awaitService] rebinds, both rate-limited
+     * by [binding].
+     */
+    private fun linkServiceDeath(binder: IBinder) {
+        unlinkServiceDeath()
+        val recipient =
+            IBinder.DeathRecipient {
+                Log.w(TAG, "Shell service process died")
+                binding = false
+                linkedBinder = null
+                serviceDeath = null
+                userService = null
+                userServiceDeferred = CompletableDeferred()
+            }
+        runCatching { binder.linkToDeath(recipient, 0) }
+            .onSuccess {
+                linkedBinder = binder
+                serviceDeath = recipient
+            }
+            .onFailure { Log.w(TAG, "Could not watch the shell service for death", it) }
+    }
+
+    private fun unlinkServiceDeath() {
+        val recipient = serviceDeath
+        val binder = linkedBinder
+        if (recipient != null && binder != null) runCatching { binder.unlinkToDeath(recipient, 0) }
+        serviceDeath = null
+        linkedBinder = null
+    }
 
     private fun IBinder.wrap() = ShizukuBinderWrapper(this)
 
@@ -202,6 +249,7 @@ object ShizukuApi {
             binding = false
             isBinderAvailable = false
             isPermissionGranted = false
+            unlinkServiceDeath()
             userService = null
             userServiceDeferred = CompletableDeferred()
             forgetSurfaced()
@@ -371,7 +419,28 @@ object ShizukuApi {
             fallback
         }
 
+    /**
+     * Clears a bound service whose process has died, so [ensureReady]'s bind starts a fresh one.
+     *
+     * `pingBinder` is a cheap round trip that returns false the moment the other side is gone -- the
+     * one way to tell a live binder from a dead reference the callbacks never cleared.
+     */
+    private fun dropDeadService() {
+        val current = userService ?: return
+        if (runCatching { current.asBinder().pingBinder() }.getOrDefault(false)) return
+        Log.w(TAG, "Shell service binder is not responding; dropping it to force a rebind")
+        unlinkServiceDeath()
+        userService = null
+        userServiceDeferred = CompletableDeferred()
+        binding = false
+    }
+
     private suspend fun awaitService(op: ShizukuOp): IShizukuService? {
+        // Drop a dead reference before the readiness check, so its bind sees no service and starts a
+        // fresh one rather than the "already bound" guard keeping a corpse that fails every call. The
+        // death recipient handles this too, but a death Shizuku never reported reaches the app only
+        // here -- the first call that pings the binder and finds nothing on the other side.
+        dropDeadService()
         if (!ensureReady(op)) return null
         if (userService == null) Log.d(TAG, "$op: waiting up to ${SERVICE_TIMEOUT_MS}ms for the shell service")
         val service = userService ?: withTimeoutOrNull(SERVICE_TIMEOUT_MS) { userServiceDeferred.await() }
@@ -460,6 +529,7 @@ object ShizukuApi {
     fun releaseUserService() {
         val wasBound = userService != null
         binding = false
+        unlinkServiceDeath()
         userService = null
         userServiceDeferred = CompletableDeferred()
         if (!wasBound || !::appContext.isInitialized) return
