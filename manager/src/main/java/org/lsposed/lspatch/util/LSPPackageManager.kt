@@ -920,12 +920,18 @@ object LSPPackageManager {
     /**
      * The apks inside an app bundle, or null when [file] is a plain apk (or not a readable zip).
      *
-     * A bundle (.xapk/.apks/.apkm) is a zip carrying a base apk and its splits; a plain apk never holds a nested
-     * `*.apk` entry, so the absence of one means "use the file as-is". Each contained apk is extracted into tmpApkDir
-     * under its own basename for the split-install path to pick up.
+     * A bundle (.xapk/.apks/.apkm) is a zip carrying a base apk and its splits, and is not itself an apk. A plain apk
+     * is itself an apk -- it carries `AndroidManifest.xml` at its root -- and stays that even when it ships nested
+     * `*.apk` files as assets (a skin, a plugin, an embedded installer). Telling the two apart by the presence of a
+     * nested `*.apk` alone is wrong: an app that embeds one would be mistaken for a bundle, its real apk discarded as
+     * the container, and one of its assets patched in its place. The root manifest is what distinguishes them, so a
+     * file that has one is used as-is; only a container that is not an apk is expanded into its members, each into
+     * tmpApkDir under its own basename for the split-install path to pick up.
      */
     private fun extractBundle(file: File): List<File>? = runCatching {
         java.util.zip.ZipFile(file).use { zip ->
+            // Itself an apk (root manifest) -> not a bundle, whatever nested apks it may carry as assets.
+            if (zip.getEntry("AndroidManifest.xml") != null) return@use null
             val apkEntries =
                 zip.entries()
                     .asSequence()
