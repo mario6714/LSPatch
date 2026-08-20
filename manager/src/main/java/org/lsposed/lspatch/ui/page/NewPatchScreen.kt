@@ -1421,18 +1421,18 @@ private fun PatchBar(
                 }
 
                 PatchStep.Idle -> {
-                    val installed =
-                        remember(request.packageName) {
-                            LSPPackageManager.isInstalledWithoutPatch(request.packageName)
+                    val needsUninstall =
+                        remember(request.packageName, MyKeyStore.useDefault) {
+                            LSPPackageManager.keystoreConflictsWith(request.packageName)
                         }
                     Text(
                         text =
                             stringResource(
-                                if (installed) R.string.patch_effect_uninstall else R.string.patch_effect_replace
+                                if (needsUninstall) R.string.patch_effect_uninstall else R.string.patch_effect_replace
                             ),
                         style = MaterialTheme.typography.bodySmall,
                         color =
-                            if (installed) MaterialTheme.colorScheme.error
+                            if (needsUninstall) MaterialTheme.colorScheme.error
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Button(onClick = onPatch, modifier = Modifier.fillMaxWidth()) {

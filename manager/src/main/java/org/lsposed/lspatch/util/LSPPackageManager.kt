@@ -12,6 +12,7 @@ import android.content.pm.PackageInstaller
 import android.content.pm.PackageInstallerHidden.SessionParamsHidden
 import android.content.pm.PackageManager
 import android.content.pm.PackageManagerHidden
+import android.content.pm.Signature
 import android.net.Uri
 import android.os.Build
 import android.os.Parcelable
@@ -41,7 +42,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.parcelize.Parcelize
 import me.zhanghai.android.appiconloader.AppIconLoader
+import org.lsposed.lspatch.config.Configs
 import org.lsposed.lspatch.config.ConfigManager
+import org.lsposed.lspatch.config.MyKeyStore
 import org.lsposed.lspatch.data.model.ModuleBinding
 import org.lsposed.lspatch.data.model.ModuleOrigin
 import org.lsposed.lspatch.lspApp
@@ -701,6 +704,81 @@ object LSPPackageManager {
             false
         }
     }
+
+    /**
+     * Whether an already-installed [packageName] would have to be uninstalled before [patchedApk] can replace it —
+     * i.e. Android would reject the update because the signing certificates differ.
+     *
+     * This compares the actual signers rather than assuming any non-LSPatch build clashes: a user signing with a
+     * custom keystore that matches the installed app produces a patched apk Android will accept as an in-place
+     * update, and that case must not be sent to the uninstall prompt. Signers are readable by any app, so no Shizuku
+     * is involved.
+     *
+     * Returns false when nothing is installed under that name (a clean install). Only when a signature cannot be read
+     * on either side does it fall back to [isInstalledWithoutPatch], so an undetermined case still errs toward asking
+     * rather than firing an install Android will refuse.
+     */
+    fun signatureBlocksUpdate(packageName: String, patchedApk: File): Boolean {
+        val installed = installedSigners(packageName) ?: return false
+        val patched = archiveSigners(patchedApk)
+        if (installed.isEmpty() || patched.isEmpty()) return isInstalledWithoutPatch(packageName)
+        return installed != patched
+    }
+
+    /** Current signers of an installed package; null when it is not installed, empty when unreadable. */
+    private fun installedSigners(packageName: String): Set<Signature>? {
+        val info =
+            try {
+                lspApp.packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+            } catch (e: PackageManager.NameNotFoundException) {
+                return null
+            }
+        return signersOf(info)
+    }
+
+    /** Signers of an apk on disk; empty when the archive cannot be read. */
+    private fun archiveSigners(apk: File): Set<Signature> {
+        val info =
+            lspApp.packageManager.getPackageArchiveInfo(apk.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES)
+                ?: return emptySet()
+        return signersOf(info)
+    }
+
+    /** The set of certificates that currently authenticate a package or archive (minSdk 28, so v2+ signing info). */
+    private fun signersOf(info: android.content.pm.PackageInfo): Set<Signature> =
+        info.signingInfo?.apkContentsSigners?.toSet().orEmpty()
+
+    /**
+     * Whether patching [packageName] would need an uninstall, judged before the apk is built so the pre-patch preview
+     * can warn honestly. Compares the installed app's signers with the certificate of the currently-selected keystore
+     * -- the same certificate the patched apk will carry -- so a custom keystore that matches the app is not
+     * mislabelled as a conflict. Falls back to [isInstalledWithoutPatch] only when a signature cannot be read.
+     */
+    fun keystoreConflictsWith(packageName: String): Boolean {
+        val installed = installedSigners(packageName) ?: return false
+        val signer = selectedKeystoreSigner()
+        if (installed.isEmpty() || signer == null) return isInstalledWithoutPatch(packageName)
+        return installed != setOf(signer)
+    }
+
+    /** The signing certificate of the selected keystore as a [Signature]; null when it cannot be read. */
+    private fun selectedKeystoreSigner(): Signature? =
+        runCatching {
+            val keyStore = java.security.KeyStore.getInstance(java.security.KeyStore.getDefaultType())
+            val cert =
+                if (MyKeyStore.useDefault) {
+                    (lspApp.classLoader.getResourceAsStream("assets/keystore") ?: return null).use {
+                        keyStore.load(it, "123456".toCharArray())
+                    }
+                    keyStore.getCertificate("key0")
+                } else {
+                    java.io.FileInputStream(MyKeyStore.file).use {
+                        keyStore.load(it, Configs.keyStorePassword.toCharArray())
+                    }
+                    keyStore.getCertificate(Configs.keyStoreAlias)
+                }
+            cert?.let { Signature(it.encoded) }
+        }.getOrNull()
 
     /**
      * Drives one platform-installer action (install/uninstall) to completion. Registers a result receiver, hands the

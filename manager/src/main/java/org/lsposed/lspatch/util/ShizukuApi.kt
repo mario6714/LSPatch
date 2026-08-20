@@ -649,24 +649,6 @@ object ShizukuApi {
             }
         }
 
-    /**
-     * Whether [packageName] is installed and is not an LSPatch build — null when Shizuku could not answer, which the
-     * caller must not read as "no": it means ask someone else.
-     */
-    fun isPackageInstalledWithoutPatch(packageName: String): Boolean? {
-        if (!ensureReady(ShizukuOp.PackageQuery)) return null
-        return guard(ShizukuOp.PackageQuery, null) {
-            val userId = Process.myUserHandle().hashCode()
-            val app =
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    iPackageManager.getApplicationInfo(packageName, PackageManager.GET_META_DATA.toLong(), userId)
-                } else {
-                    iPackageManager.getApplicationInfo(packageName, PackageManager.GET_META_DATA, userId)
-                }
-            (app != null) && (app.metaData?.containsKey("lspatch") != true)
-        }
-    }
-
     /** Uninstalls through the shell installer. Throws like the session above, and for the reason. */
     fun uninstallPackage(packageName: String, intentSender: IntentSender) {
         try {

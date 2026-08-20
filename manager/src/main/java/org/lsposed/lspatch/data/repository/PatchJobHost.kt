@@ -19,6 +19,7 @@ import org.lsposed.lspatch.util.LSPPackageManager
 import org.lsposed.lspatch.util.ShizukuApi
 import org.lsposed.lspatch.util.ShizukuOp
 import org.lsposed.patch.util.Logger
+import java.io.File
 
 /**
  * The one patch job in flight, and everything watching it.
@@ -208,7 +209,7 @@ object PatchJobHost {
                     android.util.Log.INFO,
                     "Install: ${files.size} apk(s) via ${if (useShizuku) "Shizuku shell" else "platform installer"}",
                 )
-                if (!uninstallFirst && needsUninstall(pkg, useShizuku)) {
+                if (!uninstallFirst && needsUninstall(pkg, files)) {
                     // Worth recording even though it is not a failure: it is the moment the flow stops
                     // and waits, and a report that skips it looks like one that simply ended.
                     append(android.util.Log.WARN, "A differently-signed $pkg is installed; asking to uninstall first")
@@ -339,12 +340,13 @@ object PatchJobHost {
     private fun statusLevel(status: Int) =
         if (status == PackageInstaller.STATUS_SUCCESS) android.util.Log.INFO else android.util.Log.ERROR
 
-    // Shizuku answering "I could not tell" must not read as "nothing to uninstall": that would send
-    // a differently-signed install at a package Android will refuse. The app's own PackageManager
-    // answers in its place, and the failure is already recorded for the reader.
-    private fun needsUninstall(packageName: String, useShizuku: Boolean): Boolean =
-        (if (useShizuku) ShizukuApi.isPackageInstalledWithoutPatch(packageName) else null)
-            ?: LSPPackageManager.isInstalledWithoutPatch(packageName)
+    // An update is refused only when the installed app and the patched apk carry different signing
+    // certificates, so the answer comes from comparing the two sets of signers -- not from assuming
+    // every non-LSPatch build clashes. A custom keystore that matches the installed app updates in
+    // place, and that case must not be sent to the uninstall prompt. Signers are readable without
+    // Shizuku, so the check is the same on either install path.
+    private fun needsUninstall(packageName: String, files: List<File>): Boolean =
+        files.firstOrNull()?.let { LSPPackageManager.signatureBlocksUpdate(packageName, it) } ?: false
 
     private suspend fun uninstall(packageName: String, useShizuku: Boolean): Pair<Int, String?> =
         if (useShizuku) LSPPackageManager.uninstall(packageName) else LSPPackageManager.uninstallBySystem(packageName)
