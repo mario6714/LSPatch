@@ -1,35 +1,33 @@
-## LSPatch 1.0 — rebuilt on Vector
+### 🔗 A patched app no longer needs the manager alive
+A manager reaped in the background, or force-stopped, left a manager-backed app starting with no
+modules after five seconds spent waiting. It now records which modules it runs and where their APKs
+are, loads from that copy when the manager does not answer, and waits one and a half seconds. The
+binding is re-established rather than made once, restoring the hot-reload channel and each module's
+service; where Shizuku is granted, the shell service restarts a manager it finds gone.
 
-LSPatch 1.0 is a ground-up rebuild on Vector, the framework that succeeds LSPosed. A patched app now
-loads modern libxposed (API 102) and legacy Xposed modules through Vector's own runtime — the same
-loader the rooted framework uses — with no root and no Zygisk, and a module gets a real `IXposedService`.
+### 🪵 Logs that contain the app you patched
+The framework stream's uid set was built before the package scan that fills it, so it held the manager
+alone and dropped what a patched app and its modules wrote. It is built after the scan and refreshed
+as apps are patched. The release loader keeps its own lines too — signature bypass, module loader,
+service client. You can filter by writer, and a native crash dump reads as one entry rather than a
+page of fragments.
 
-> [!IMPORTANT]
-> The runtime inside a patched app is entirely new. Apps patched with an older LSPatch won't pick it
-> up — re-patch every app you run modules in.
+### 🌐 The Store resolves over HTTPS
+Catalogue, downloads and self-update go through Vector's OkHttp client and its DoH resolver, so DNS
+blocking can no longer leave the Store quietly empty.
 
-### 🔀 Embedded or Manager mode, chosen at patch time
-- **📦 Embedded.** Modules are baked into the APK; the app is self-contained and needs nothing else
-  installed. Changing its modules means re-patching.
-- **🛰️ Manager.** The patched app binds the manager at runtime, so you change a module's scope live —
-  no re-patch — and hot-reload it into a running app, with module storage shared across every patched
-  app. The manager has to stay installed.
+### 🩹 A patch reads the file you chose
+- **Target apks resolved when the patch runs** — a recorded path is a name, not a location, so
+  an app the system moved is found again.
+- **A picked apk** is kept in no-backup storage, not the cache the platform may evict.
+- **An apk carrying a nested apk** is no longer read as an app bundle.
 
-### 📱 Manager rebuilt on Vector's shared UI
-Home, a module Store, Manage, and Logs. Manage lists your patched apps and modules with reach
-thumbnails; open any app to a detail page to edit its modules as a draft, re-patch, update its loader,
-export the APK, or restore the original.
-
-### 🛠️ One patch flow
-Every path — a new app, an APK from storage, a re-patch, a loader update — lands on one screen, and
-patching and installing are now separate steps. Patched APKs live in app-private storage (no
-storage-permission dance; SAF export is its own button), leaving mid-patch no longer cancels the job,
-and a re-patch needs nothing on hand — the patched APK carries the originals and settings it was built
-from.
-
-### 🔓 Rootless reach
-- **🗄️ Browse a patched app's private data.** An opt-in patch injects a Storage Access Framework
-  provider, so any SAF file manager can open the app's `/data/data/<pkg>` without root.
-- **🫥 Cloak the manager.** The manager can reinstall itself under a custom or random package name —
-  migrating its settings, keystore, and bound apps, with one-tap revert — so a scan for
-  `org.lsposed.lspatch` comes up empty.
+### 🧹 Also
+- Every wait on a system service has a deadline, so a lost install status is re-checked rather than
+  hanging.
+- The uninstall prompt appears only when the signing certificates differ; a matching custom keystore
+  updates in place.
+- Manage no longer crashes while listing an integrated patch's modules.
+- Shizuku permission is re-read at each use, and keep rules let the user service survive a minified
+  build.
+- A "Rolling" loader badge that all 18 locales mistranslated as a verb is gone.
