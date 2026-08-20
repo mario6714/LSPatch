@@ -75,7 +75,14 @@ class LSPApplication : Application() {
     fun startBackgroundWork() {
         if (!backgroundWorkStarted.compareAndSet(false, true)) return
         AppBroadcastReceiver.register(this)
-        globalScope.launch { LSPPackageManager.fetchAppList() }
+        globalScope.launch {
+            // Before the list, not beside it. The modules unpacked out of an integrated patch are cleared at a start
+            // because a listing hands out paths into that cache and its callers keep them, so there is no later moment
+            // at which dropping one is safe. Nothing can list them before the app list exists, and ordering the two
+            // here is what makes that a guarantee rather than a matter of which coroutine ran first.
+            LSPPackageManager.sweepEmbeddedModules()
+            LSPPackageManager.fetchAppList()
+        }
         // Patched output survives a crash between patching and installing, so it has to be cleared
         // by someone; the app list is what says which packages still have a reason to keep theirs.
         globalScope.launch { PatchOutputStore.sweep() }

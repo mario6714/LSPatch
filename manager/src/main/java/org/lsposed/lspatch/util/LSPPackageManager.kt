@@ -266,14 +266,14 @@ object LSPPackageManager {
      * end of its file raises `SIGBUS`, which is not an exception anything can catch: the process is gone.
      *
      * So no file is ever written where a file already is. A new version of the host apk unpacks into a directory of its
-     * own and the previous one is deleted -- deleting leaves an existing reader's mapping intact, exactly the thing
-     * truncating does not do -- and within a directory the copy lands on a staging name and is moved into place, so a
-     * file that exists at all is a whole one and can be read again rather than written again.
+     * own, and within a directory the copy lands on a staging name and is moved into place, so a file that exists at
+     * all is a whole one and can be read again rather than written again. Nothing here deletes: what an unpacking
+     * returns is a set of paths its caller goes on holding, and a directory this left behind is swept at the next
+     * start by [sweepEmbeddedModules], where no one holds a path into it yet.
      */
     private fun unpackEmbeddedModules(pkg: String, apkPath: String, stamp: String): List<ModuleBinding> {
         val root = lspApp.cacheDir.resolve("embedded-modules").resolve(pkg)
         val outDir = root.resolve(stamp.replace(':', '-').ifEmpty { "unstamped" }).also { it.mkdirs() }
-        root.listFiles()?.forEach { if (it != outDir) it.deleteRecursively() }
         return java.util.zip.ZipFile(apkPath).use { zip ->
             zip.entries()
                 .asSequence()
@@ -287,9 +287,7 @@ object LSPPackageManager {
                     if (fileName.isEmpty()) return@mapNotNull null
                     runCatching {
                         val apk = outDir.resolve(fileName)
-                        // A host apk that could not be stamped cannot be told apart from a different one, so what is
-                        // already on disk says nothing about whether it is still the right content.
-                        if (stamp.isEmpty() || !apk.exists()) {
+                        if (!apk.exists()) {
                             // Never mapped by anything, so this one is safe to write over.
                             val staging = outDir.resolve("$fileName.part")
                             zip.getInputStream(entry).use { input ->
@@ -309,6 +307,22 @@ object LSPPackageManager {
                         .getOrNull()
                 }
                 .toList()
+        }
+    }
+
+    /**
+     * Drops every unpacked embedded module, at a moment when no one can be reading one.
+     *
+     * The unpacking itself never deletes, because the paths it returns are held by whoever asked for them -- a screen
+     * still showing a module it listed, a patch request naming the apk to embed -- and a directory removed under those
+     * turns a readable path into a missing one. A start is the moment that cannot be true of: nothing has been listed
+     * yet, so nothing is holding a path. Taken under the same lock as an unpacking, so it cannot land in the middle of
+     * one.
+     */
+    suspend fun sweepEmbeddedModules() {
+        extracting.withLock {
+            withContext(Dispatchers.IO) { lspApp.cacheDir.resolve("embedded-modules").deleteRecursively() }
+            embeddedModulesCache.clear()
         }
     }
 
