@@ -17,14 +17,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.rikka.tools.refine.Refine
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.shizuku.server.IShizukuService as IShizukuServer
 import org.lsposed.lspatch.IShizukuService
 import org.lsposed.lspatch.R
 import org.lsposed.lspatch.ShizukuService
+import org.lsposed.lspatch.config.Configs
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuBinderWrapper
 import rikka.shizuku.SystemServiceHelper
@@ -110,7 +113,17 @@ object ShizukuApi {
 
     private const val MAX_REMEMBERED_FAILURES = 20
 
-    @Volatile private var userService: IShizukuService? = null
+    // The live shell service, published as a flow rather than a plain field so a waiter observes the
+    // CURRENT value rather than a captured promise. A CompletableDeferred here could be reassigned by
+    // an intervening onServiceDisconnected between the moment a waiter captured it and the moment a
+    // fresh bind completed a *different* instance, stranding the waiter until its own timeout even
+    // though the service was live -- the false "did not start within 3s". A StateFlow has no such
+    // instance to strand: [awaitService] resumes on whatever value is current when it becomes non-null.
+    private val serviceFlow = MutableStateFlow<IShizukuService?>(null)
+
+    /** The bound shell service, or null. Reads the flow's current value. */
+    private val userService: IShizukuService?
+        get() = serviceFlow.value
 
     // A bind is not instant: Shizuku starts a process for it, and until that lands every refresh
     // would ask for another, and each surplus request can leave a shell process outliving its
@@ -128,9 +141,6 @@ object ShizukuApi {
     // The last state refresh() reported, so it reports again only when the state is different.
     @Volatile private var lastLoggedState: String? = null
 
-    // This allows us to "await" the service connection
-    private var userServiceDeferred = CompletableDeferred<IShizukuService>()
-
     // The raw binder a death recipient is linked to, and that recipient -- kept so the link can be
     // undone on release. Shizuku does not reliably deliver onServiceDisconnected when the shell
     // process dies, so the binder's own death is the signal that always arrives.
@@ -143,17 +153,15 @@ object ShizukuApi {
                 Log.i(TAG, "Shell service connected")
                 binding = false
                 val binder = IShizukuService.Stub.asInterface(service)
-                userService = binder
                 linkServiceDeath(service)
-                userServiceDeferred.complete(binder)
+                serviceFlow.value = binder
             }
 
             override fun onServiceDisconnected(name: ComponentName) {
                 Log.w(TAG, "Shell service disconnected")
                 binding = false
                 unlinkServiceDeath()
-                userService = null
-                userServiceDeferred = CompletableDeferred()
+                serviceFlow.value = null
             }
         }
 
@@ -177,8 +185,7 @@ object ShizukuApi {
                 binding = false
                 linkedBinder = null
                 serviceDeath = null
-                userService = null
-                userServiceDeferred = CompletableDeferred()
+                serviceFlow.value = null
             }
         runCatching { binder.linkToDeath(recipient, 0) }
             .onSuccess {
@@ -237,6 +244,13 @@ object ShizukuApi {
 
     fun init(context: Context) {
         appContext = context.applicationContext
+        // Seed the shell's lifetime BEFORE any listener can trigger the first bind. The sticky
+        // binder-received listener below fires refresh() -- and thus bindUserService() -- the moment
+        // Shizuku is available, which is before the resident service's first tick. Without this seed
+        // that first bind is a transient shell, and keep-alive then has to switch it to a daemon,
+        // tearing down the shell and its collector once per process start. With it, a keep-alive
+        // manager binds the daemon directly and reuses a surviving one on respawn.
+        daemonRequested = runCatching { Configs.keepManagerAlive }.getOrDefault(false)
         Log.i(TAG, "init: registering Shizuku listeners")
         Shizuku.addBinderReceivedListenerSticky {
             Log.i(TAG, "Binder received: server API ${serverVersion() ?: "?"}, uid ${serverUid() ?: "?"}")
@@ -250,8 +264,7 @@ object ShizukuApi {
             isBinderAvailable = false
             isPermissionGranted = false
             unlinkServiceDeath()
-            userService = null
-            userServiceDeferred = CompletableDeferred()
+            serviceFlow.value = null
             forgetSurfaced()
         }
         // Registered here rather than on a screen: a grant has to bind the shell service, and a
@@ -430,12 +443,19 @@ object ShizukuApi {
         if (runCatching { current.asBinder().pingBinder() }.getOrDefault(false)) return
         Log.w(TAG, "Shell service binder is not responding; dropping it to force a rebind")
         unlinkServiceDeath()
-        userService = null
-        userServiceDeferred = CompletableDeferred()
+        serviceFlow.value = null
         binding = false
     }
 
-    private suspend fun awaitService(op: ShizukuOp): IShizukuService? {
+    /**
+     * Awaits the shell service, off whatever thread asked.
+     *
+     * [surface] governs whether a wait that expires is recorded as a user-facing failure. A wait
+     * driven by the supervisor -- arming the watchdog on a background tick -- is retryable and
+     * self-healing (the next tick tries again), so its expiry is a log line, not a modal error and
+     * not a row in the exported diagnostic. A wait behind a user's own action stays surfacing.
+     */
+    private suspend fun awaitService(op: ShizukuOp, surface: Boolean = true): IShizukuService? {
         // Drop a dead reference before the readiness check, so its bind sees no service and starts a
         // fresh one rather than the "already bound" guard keeping a corpse that fails every call. The
         // death recipient handles this too, but a death Shizuku never reported reaches the app only
@@ -443,13 +463,21 @@ object ShizukuApi {
         dropDeadService()
         if (!ensureReady(op)) return null
         if (userService == null) Log.d(TAG, "$op: waiting up to ${SERVICE_TIMEOUT_MS}ms for the shell service")
-        val service = userService ?: withTimeoutOrNull(SERVICE_TIMEOUT_MS) { userServiceDeferred.await() }
+        // Observe the flow's CURRENT value: if a bind is in flight, this resumes the instant the
+        // service becomes non-null, and an intervening disconnect (which sets it back to null) cannot
+        // strand the waiter the way a reassigned promise could.
+        val service =
+            userService ?: withTimeoutOrNull(SERVICE_TIMEOUT_MS) { serviceFlow.filterNotNull().first() }
         if (service == null) {
-            record(
-                op,
-                ShizukuReason.ServiceUnavailable,
-                "the Shizuku shell service did not start within ${SERVICE_TIMEOUT_MS / 1000}s",
-            )
+            if (surface) {
+                record(
+                    op,
+                    ShizukuReason.ServiceUnavailable,
+                    "the Shizuku shell service did not start within ${SERVICE_TIMEOUT_MS / 1000}s",
+                )
+            } else {
+                Log.w(TAG, "$op: shell service not ready within ${SERVICE_TIMEOUT_MS / 1000}s; a later tick will retry")
+            }
         }
         return service
     }
@@ -462,9 +490,14 @@ object ShizukuApi {
      * site, where forgetting it is invisible until the call is slow. Doing it once also keeps the gate's own binder
      * traffic off the caller's thread.
      */
-    private suspend fun <T> onService(op: ShizukuOp, fallback: T, block: (IShizukuService) -> T): T =
+    private suspend fun <T> onService(
+        op: ShizukuOp,
+        fallback: T,
+        surface: Boolean = true,
+        block: (IShizukuService) -> T,
+    ): T =
         withContext(Dispatchers.IO) {
-            val service = awaitService(op) ?: return@withContext fallback
+            val service = awaitService(op, surface) ?: return@withContext fallback
             guard(op, fallback) { block(service) }
         }
 
@@ -495,7 +528,11 @@ object ShizukuApi {
         Shizuku.UserServiceArgs(ComponentName(appContext.packageName, ShizukuService::class.java.name))
             .daemon(daemon)
             .tag(if (daemon) "lspatch-shell-daemon" else "lspatch-shell")
-            .processNameSuffix("service")
+            // A distinct process name per lifetime, because ShizukuService.reapPreviousInstances kills
+            // every other process sharing this one's name: with a single name a fresh transient shell
+            // would reap the armed daemon whose whole job is to outlive this app. Now a transient reaps
+            // only strays like itself, and a daemon only stale daemons.
+            .processNameSuffix(if (daemon) "service-daemon" else "service")
             .debuggable(true)
             // Version the service by the app's version code: on an upgrade Shizuku tears down the old
             // instance and starts a fresh one, so a rebuilt ShizukuService (new AIDL, new collector)
@@ -530,8 +567,7 @@ object ShizukuApi {
         val wasBound = userService != null
         binding = false
         unlinkServiceDeath()
-        userService = null
-        userServiceDeferred = CompletableDeferred()
+        serviceFlow.value = null
         if (!wasBound || !::appContext.isInitialized) return
         Log.i(TAG, "Unbinding the shell service and asking Shizuku to stop it")
         val args = boundArgs ?: serviceArgs
@@ -542,11 +578,16 @@ object ShizukuApi {
     /**
      * Chooses whether the next shell service is a daemon, letting go of one bound the other way.
      *
-     * A service record's lifetime is fixed when it starts, so there is no changing it in place; the running one is
-     * released and the next call binds under the new rule.
+     * Shizuku can flip a record's daemon flag in place on a same-tag rebind (its
+     * createUserServiceRecordIfNeededLocked calls record.setDaemon and re-broadcasts the existing
+     * binder), but LSPatch gives the two lifetimes distinct tags, so a switch releases the running
+     * record and the next bind starts under the new one. That release is why the switch must not
+     * happen on a loop: the supervisor seeds the lifetime BEFORE the first bind (see the resident
+     * service), so on a keep-alive device the shell is bound as a daemon from the start and no live
+     * service is ever torn down to change it.
      */
     @Synchronized
-    private fun setShellDaemon(enabled: Boolean) {
+    internal fun setShellDaemon(enabled: Boolean) {
         if (daemonRequested == enabled) return
         Log.i(TAG, "Shell service lifetime is now " + if (enabled) "daemon" else "tied to this app")
         val hadService = userService != null
@@ -567,14 +608,18 @@ object ShizukuApi {
         val arm = { service: IShizukuService ->
             service.startManagerWatchdog(packageName, component, userId, intervalSeconds)
         }
-        if (onService(ShizukuOp.Shell, false, arm)) return true
+        if (onService(ShizukuOp.Shell, false, surface = false, block = arm)) return true
         // A daemon shell service outlives the app that asked for it -- that is the point of it -- so
         // the one answering here can be from a previous life of this app, running code that predates
-        // this call and cannot serve it. Nothing distinguishes that from any other failure except
-        // trying again against a process this build started, so it is let go of exactly once.
+        // this call and cannot serve it. Replace it only when it is actually dead: a bare `false` here
+        // is as likely a wait that has not landed yet as a stale process, and releasing a live daemon
+        // would kill the very thing keep-alive exists to preserve and rebind a third process into the
+        // same wait. So the running one is let go only when its binder no longer answers.
         Log.i(TAG, "The shell service could not arm the watchdog; replacing it and trying once more")
-        releaseUserService()
-        return onService(ShizukuOp.Shell, false, arm)
+        val current = userService
+        val dead = current == null || !runCatching { current.asBinder().pingBinder() }.getOrDefault(false)
+        if (dead) releaseUserService()
+        return onService(ShizukuOp.Shell, false, surface = false, block = arm)
     }
 
     /** Disarms the watchdog and lets the shell process go back to living only as long as this app does. */

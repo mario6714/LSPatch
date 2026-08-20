@@ -161,6 +161,12 @@ class ShizukuService : IShizukuService.Stub() {
                 addAll(listOf("logcat", "-b", "main", "-b", "crash", "-b", "system"))
                 if (uidAware) addAll(listOf("-v", "uid"))
                 addAll(listOf("-v", "threadtime"))
+                // Follow from the tail rather than replaying the whole ring buffer. Without this every
+                // (re)start re-dumps all three buffers -- megabytes duplicated to disk that evict real
+                // history under the rotation cap. Collection is meant to begin at monitoring-start, so
+                // pre-monitoring history is not wanted, and a running collector is updated in place
+                // rather than restarted, so this fires only on a genuine start.
+                addAll(listOf("-T", "1"))
             }
             val builder = ProcessBuilder(command)
             builder.redirectErrorStream(true)

@@ -92,6 +92,14 @@ class ManagerResidentService : Service() {
                     stopSelf()
                     return@launch
                 }
+                // Decide the shell's lifetime BEFORE the first bind. A keep-alive shell must be a
+                // daemon (it hosts the watchdog that outlives this app), and a record's lifetime is
+                // fixed at bind time. Seeding it here means refresh() binds the daemon directly and
+                // reuses a surviving one on respawn -- instead of binding a transient, starting the
+                // collector on it, then tearing both down when armWatchdog later switches to daemon.
+                // On tick 1 of a fresh process nothing is bound, so this only sets the intent; on
+                // later ticks it is a no-op.
+                if (Configs.keepManagerAlive) ShizukuApi.setShellDaemon(true)
                 // refresh() rather than ensureReady(): this tick repeats forever, and a device
                 // without Shizuku would otherwise report the same thing to the reader on a loop.
                 // The Logs screen already explains an absent Shizuku in place.
