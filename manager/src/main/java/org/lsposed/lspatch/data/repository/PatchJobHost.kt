@@ -169,6 +169,12 @@ object PatchJobHost {
      */
     private fun resolvedNow(request: PatchRequest): Pair<PatchRequest, String?> {
         val target = request.target as? PatchTarget.InstalledApp ?: return request to null
+        // Re-resolve only apks the system keeps and can move on an update. A recorded path under this
+        // app's own storage is a source copy it owns -- an apk picked from storage, mislabelled as an
+        // installed target or arriving through a legacy request -- and reading the installed apk in its
+        // place would silently patch a different build than the one that was chosen. Such a source is
+        // left as the request holds it; if it is gone, that is reported by name rather than papered over.
+        if (target.apkPaths.any { it.startsWith(lspApp.dataDir.path) }) return request to null
         val live = LSPPackageManager.installedApkPaths(target.packageName)
         if (live == null) {
             // Absent and absent-with-a-record are different answers to "what happened to it", and a

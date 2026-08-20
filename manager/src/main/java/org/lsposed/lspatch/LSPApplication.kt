@@ -24,6 +24,14 @@ lateinit var lspApp: LSPApplication
 class LSPApplication : Application() {
 
     lateinit var prefs: SharedPreferences
+
+    /**
+     * Where an apk picked from storage is copied so the patch can read it. A patch request outlives the moment it is
+     * built -- it is saved to disk, re-entered after the process is killed, and re-run by a retry -- and a storage
+     * pick has no other copy on disk, so this must survive all of that. Under `noBackupFilesDir` rather than
+     * `cacheDir`: the cache can be evicted under storage pressure, which would take the one copy of the source with it
+     * and leave the patch reading a path that no longer exists.
+     */
     lateinit var tmpApkDir: File
 
     /**
@@ -47,7 +55,7 @@ class LSPApplication : Application() {
         filesDir.mkdir()
         // Restore settings/db/keystore from a cloaked APK before opening prefs or Room.
         ManagerMigrate.importIfNeeded(this)
-        tmpApkDir = cacheDir.resolve("apk").also { it.mkdir() }
+        tmpApkDir = noBackupFilesDir.resolve("apk").also { it.mkdirs() }
         patchedDir = noBackupFilesDir.resolve("patched").also { it.mkdirs() }
         prefs = lspApp.getSharedPreferences("settings", Context.MODE_PRIVATE)
         ShizukuApi.init(this)
