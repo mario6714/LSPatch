@@ -22,7 +22,7 @@ import org.lsposed.lspatch.share.LSPConfig
 import org.lsposed.lspatch.util.LSPPackageManager
 import org.lsposed.lspatch.util.ShizukuApi
 import org.matrix.vector.ui.logs.LogContent
-import org.matrix.vector.ui.logs.LogFacets
+import org.matrix.vector.ui.logs.LogFacetCounter
 import org.matrix.vector.ui.logs.LogIndex
 import org.matrix.vector.ui.logs.LogLevel
 import org.matrix.vector.ui.logs.LogQuery
@@ -30,6 +30,7 @@ import org.matrix.vector.ui.logs.LogResetKind
 import org.matrix.vector.ui.logs.LogRow
 import org.matrix.vector.ui.logs.LogScanResult
 import org.matrix.vector.ui.logs.LogSource
+import org.matrix.vector.ui.logs.WriterLabeler
 import org.matrix.vector.ui.logs.isThrowableHeader
 
 /**
@@ -41,12 +42,15 @@ import org.matrix.vector.ui.logs.isThrowableHeader
  * part chevrons are real rotations, and logs captured while the screen was closed are still there — falling back to a
  * one-shot `logcat -d` snapshot only in the gap before the collector has produced anything.
  *
- * The framework stream is routed at collection time by uid: a line joins it when it comes from the manager, a patched
- * app or a module (their uids passed to the collector), or is an AndroidRuntime warning/error or any fatal line. So the
- * read side just parses the already-routed part — no per-line package resolution — and the manager's own uid being in
- * the set is why the stream is never empty.
+ * The framework stream is routed at collection time by uid alone: a line joins it when it comes from the manager, a
+ * patched app or a module (their uids pushed to the collector), or is fatal whoever wrote it. So the read side just
+ * parses the already-routed part — no per-line package resolution, and no tag to second-guess.
  */
 class LSPLogSource(private val context: Context) : LogSource {
+
+    private val writers = WriterLabeler(context.packageManager)
+
+    override fun writerLabel(uid: Int): String? = writers.label(uid)
 
     private val _wordWrap = MutableStateFlow(false)
     override val wordWrap: StateFlow<Boolean> = _wordWrap.asStateFlow()
@@ -72,7 +76,12 @@ class LSPLogSource(private val context: Context) : LogSource {
         // Both streams are collected and rotated on disk now, so both page through real parts: the
         // verbose stream is every line, the framework stream is the uid/crash-routed subset the
         // collector wrote separately (see [ShizukuService]).
-        ShizukuApi.listLogParts(LogCollectorService.LOG_DIR, streamPrefix(verbose)).map { it.first }
+        // Only parts with something in them, matching what [open] reads back: a rotation opens an
+        // empty part, and listing it would number the chevrons one ahead of the content, with the
+        // last one selectable and blank.
+        ShizukuApi.listLogParts(LogCollectorService.LOG_DIR, streamPrefix(verbose))
+                .filter { it.second > 0L }
+                .map { it.first }
 
     override suspend fun open(verbose: Boolean, part: String?): Result<LogContent?> {
         // The fallback: an app may always read its own process's log, so a manager without Shizuku
@@ -83,20 +92,26 @@ class LSPLogSource(private val context: Context) : LogSource {
             val own =
                 withContext(Dispatchers.IO) { ownProcessLog() }
                     ?: return Result.failure(IOException("the device log is not readable without Shizuku"))
-            val entries = withContext(Dispatchers.Default) { parseLogcat(own).mapIndexed { i, e -> e.copy(index = i) } }
+            val entries =
+                withContext(Dispatchers.Default) {
+                    parseLogcat(own).mapIndexed { i, e -> e.copy(index = i) }
+                }
             return Result.success(LogcatContent(entries))
         }
         val prefix = streamPrefix(verbose)
         val raw =
             withContext(Dispatchers.IO) {
                 if (part != null) {
-                    ShizukuApi.readLogPart(part, LIVE_MAX)
+                    readTail(part)
                 } else {
+                    // The newest part, whatever is in it. A part just opened by "start a new log" is
+                    // empty, and reading the one before it instead would answer a request to start
+                    // afresh with the log the reader asked to leave behind.
                     val newest = ShizukuApi.listLogParts(LogCollectorService.LOG_DIR, prefix).lastOrNull()?.first
-                    val live = newest?.let { ShizukuApi.readLogPart(it, LIVE_MAX) }
-                    // Before the collector has written anything (Shizuku just granted, service still
-                    // spinning up), fall back to a one-shot snapshot so the screen is never blank.
-                    if (!live.isNullOrBlank()) live else ShizukuApi.runShellCommand(snapshotCommand(verbose))
+                    // Only when the collector has produced no part at all (Shizuku just granted, the
+                    // service still spinning up) does a one-shot snapshot stand in for one.
+                    if (newest != null) readTail(newest)
+                    else ShizukuApi.runShellCommand(snapshotCommand(verbose, ShizukuApi.supportsUidColumn()))
                 }
             } ?: return Result.failure(IOException("the Shizuku shell service is unavailable"))
 
@@ -422,7 +437,9 @@ class LSPLogSource(private val context: Context) : LogSource {
      * point is that the shell service is what is missing.
      */
     private fun ownProcessLog(): String? = runCatching {
-        val command = arrayOf("logcat", "-d", "-v", "threadtime", "--pid=${android.os.Process.myPid()}")
+        // `-v uid` here too: an entry parsed without that column has no writer to select by, and the
+        // search terms that name one would answer "no matches" on a screen that is showing its lines.
+        val command = arrayOf("logcat", "-d", "-v", "uid", "-v", "threadtime", "--pid=${android.os.Process.myPid()}")
         val process = Runtime.getRuntime().exec(command)
         val text = process.inputStream.bufferedReader().use { it.readText() }
         process.waitFor()
@@ -436,16 +453,70 @@ class LSPLogSource(private val context: Context) : LogSource {
     }
         .getOrNull()
 
-    private fun snapshotCommand(verbose: Boolean): String =
-        if (verbose) "logcat -d -v threadtime -t 4000"
-        else "logcat -d -b main -b crash -v threadtime -s $LOG_FILTERSPEC"
+    /**
+     * The newest [LIVE_MAX] bytes of a part, fetched a piece at a time.
+     *
+     * A whole tail asked for in one call comes back in one reply, and a reply shares a single buffer of about a
+     * megabyte with every other transaction the process has in flight -- so the live tail, re-read on every poll, could
+     * exhaust it and fail the small calls around it ("transaction failed on small parcel", which is the buffer being
+     * full rather than anything having died). Asked for in pieces, no single reply is large enough to matter.
+     *
+     * Bytes, not text: the log is very nearly ASCII, and a String would cross as UTF-16 and double it. The pieces are
+     * joined before they are decoded, since a boundary inside a multi-byte character would corrupt both sides of it;
+     * the first line may still be a fragment, which the parser drops as it always has.
+     */
+    private suspend fun readTail(path: String): String? {
+        val size = ShizukuApi.fileSize(path)
+        // Told apart on purpose: no shell is a failure to report, while a part that is empty or has
+        // been rotated away is simply an empty reading.
+        if (size < 0L) return null
+        if (size == 0L) return ""
+        var offset = (size - LIVE_MAX).coerceAtLeast(0L)
+        val out = java.io.ByteArrayOutputStream()
+        while (offset < size) {
+            val chunk = ShizukuApi.readFileChunk(path, offset, CHUNK_BYTES) ?: return null
+            if (chunk.isEmpty()) break
+            out.write(chunk)
+            offset += chunk.size
+        }
+        return out.toString(Charsets.UTF_8.name())
+    }
+
+    /**
+     * The one-shot stand-in used only until the collector has produced a part.
+     *
+     * Selected the same way the collector routes — by uid — so the stand-in shows the same log the stream will, rather
+     * than a differently-filtered one. A tag list stood here before and could not name what it did not know: a module
+     * chooses its own tag, so the module the reader came to see was precisely what it left out.
+     */
+    private fun snapshotCommand(verbose: Boolean, uidColumn: Boolean): String =
+        if (verbose) "logcat -d ${if (uidColumn) "-v uid " else ""}-v threadtime -t 4000"
+        else if (!uidColumn) {
+            // Without the uid column there is nothing to select writers by and nothing to select them
+            // with, so the stand-in is the whole recent log rather than a command this logcat would
+            // refuse -- which would leave the screen blank, the one thing this exists to avoid.
+            "logcat -d -b main -b crash -b system -v threadtime -t 4000"
+        } else {
+            val uids = LogCollectorService.relevantUids(context).joinToString(",")
+            // No -t here, though the verbose form has one: logd applies -t itself, over every buffer,
+            // and --uid is applied afterwards by logcat on what it was sent. The last N lines of a
+            // chatty device can hold almost nothing from these uids, so the window would decide the
+            // answer. The transport tail-caps the reply instead, which cuts from the far end.
+            "logcat -d -b main -b crash -b system -v uid -v threadtime --uid=$uids"
+        }
 
     private companion object {
-        /** Per-read tail cap for the screen, matching the shell service's own Binder-safe limit. */
-        const val LIVE_MAX = 400_000
+        /** How much of a part's tail the screen reads, in bytes; fetched in [CHUNK_BYTES] pieces. */
+        const val LIVE_MAX = 400_000L
 
-        /** Export chunk size: comfortably inside one Binder transaction, few enough round trips. */
-        const val CHUNK_BYTES = 512 * 1024
+        /**
+         * How much of a file one call carries back.
+         *
+         * Not "as much as a transaction allows": the ~1 MB is a buffer the whole process shares with everything else in
+         * flight, so a reply sized to fill it starves its neighbours instead of failing alone. A quarter of that leaves
+         * room for the calls happening around it and still crosses a part in a handful of round trips.
+         */
+        const val CHUNK_BYTES = 128 * 1024
 
         /** The Room database of modules and their scopes; copied into the export. */
         const val CONFIG_DB = "modules_config.db"
@@ -457,44 +528,6 @@ class LSPLogSource(private val context: Context) : LogSource {
                 "com.google.android.packageinstaller",
                 "com.android.permissioncontroller",
             )
-
-        // Filter for the one-shot fallback snapshot only: a chatty device pushes the sparse
-        // framework/crash lines out of any recent `-t N` window, so the source-side tag filter keeps
-        // logcat from ever buffering the noise. The collector itself captures everything and the
-        // framework stream is derived on read.
-        //
-        // The tags mirror what Vector's daemon routes to its module log (core .../logcat.cpp),
-        // pared to the runtime a rootless, injected app actually hosts: LSPatch's own loader, the
-        // native hook engine, and Vector's in-process framework classes. logcat's -s filterspec
-        // matches tags exactly, so each is spelled out. Vector's daemon-only tags never appear
-        // in a rootless, injected process, so they are left off.
-        val LOG_FILTERSPEC = buildList {
-            for (tag in
-                listOf(
-                    "LSPatch",
-                    "LSPatch-HotReload",
-                    "LSPatch-SigBypass",
-                    "LSPlant",
-                    "Vector",
-                    "VectorNative",
-                    "VectorContext",
-                    "VectorDeopter",
-                    "VectorLegacyBridge",
-                    "VectorLifecycle",
-                    "VectorModuleClassLoader",
-                    "VectorModuleManager",
-                    "VectorProcessChannel",
-                    "VectorServiceClient",
-                    "XSharedPreferences",
-                    "XposedProvider",
-                    "XposedServiceHelper",
-                    "RemotePreferences",
-                )) add("$tag:V")
-            add("AndroidRuntime:E") // uncaught-exception stack traces
-            add("libc:F") // native fatal signals
-            add("DEBUG:F") // tombstone dumps
-        }
-            .joinToString(" ")
     }
 }
 
@@ -534,32 +567,26 @@ class LogcatContent(private val entries: List<LogRow.Entry>) : LogContent {
         onProgress: (Float) -> Unit,
     ): LogScanResult {
         val matches = if (query.isActive) ArrayList<Int>() else null
-        val tags = HashMap<String, Int>()
-        val levels = HashMap<LogLevel, Int>()
+        val facets = LogFacetCounter(query)
         val total = entries.size.coerceAtLeast(1)
         entries.forEachIndexed { i, entry ->
-            tags[entry.tag] = (tags[entry.tag] ?: 0) + 1
-            levels[entry.level] = (levels[entry.level] ?: 0) + 1
-            if (query.matches(entry)) matches?.add(i)
+            if (facets.add(entry)) matches?.add(i)
             if (i and 0x1FF == 0) onProgress(i.toFloat() / total)
         }
         onProgress(1f)
-        return LogScanResult(
-            matches = matches?.toIntArray(),
-            facets =
-                LogFacets(
-                    tags = tags.entries.sortedByDescending { it.value }.map { it.key to it.value },
-                    levels = levels,
-                ),
-        )
+        return LogScanResult(matches = matches?.toIntArray(), facets = facets.facets())
     }
 
     override fun close() {}
 }
 
-// "MM-DD HH:MM:SS.mmm  PID  TID L Tag: message" — the threadtime format.
+// "MM-DD HH:MM:SS.mmm  PID  TID L Tag: message" — the threadtime format, and the same with the
+// writer's uid ahead of the pid, which is how the collector records it (`-v uid -v threadtime`). The
+// uid column is optional here rather than a second pattern: a plain line makes the group swallow its
+// pid, then finds a level where it needs a tid, and backtracks out of the group onto the right
+// reading. A uid the platform spells out by name ("radio") is not a number and reads as unknown.
 private val THREADTIME =
-    Regex("""^(\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}\.\d{3})\s+(\d+)\s+(\d+)\s+([VDIWEFA])\s+(.*?):\s?(.*)$""")
+    Regex("""^(\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}\.\d{3})\s+(?:(\S+)\s+)?(\d+)\s+(\d+)\s+([VDIWEFA])\s+(.*?):\s?(.*)$""")
 
 /**
  * Parses a `logcat -v threadtime` dump into entries, dropping anything that is not a log line.
@@ -581,12 +608,13 @@ fun parseLogcat(raw: String): List<LogRow.Entry> {
                 index = flat.size,
                 date = match.groupValues[1],
                 time = match.groupValues[2],
-                uid = 0, // threadtime carries no uid
-                pid = match.groupValues[3].toIntOrNull() ?: 0,
-                tid = match.groupValues[4].toIntOrNull() ?: 0,
-                level = LogLevel.of(match.groupValues[5][0]),
-                tag = match.groupValues[6].trim(),
-                message = match.groupValues[7],
+                // -1, not 0: 0 is root, and a line whose uid could not be read is not root's.
+                uid = match.groupValues[3].toIntOrNull() ?: -1,
+                pid = match.groupValues[4].toIntOrNull() ?: 0,
+                tid = match.groupValues[5].toIntOrNull() ?: 0,
+                level = LogLevel.of(match.groupValues[6][0]),
+                tag = match.groupValues[7].trim(),
+                message = match.groupValues[8],
             )
     }
     return foldCrashes(flat)

@@ -1,10 +1,16 @@
 package org.lsposed.lspatch.loader.util;
 
-import org.lsposed.lspatch.loader.BuildConfig;
-
+/**
+ * The loader's log, which is the only account of what happened inside a patched app.
+ *
+ * Not gated on the build type. It was, and a release loader -- the only kind anyone runs -- therefore threw away every
+ * line the signature bypass, the module loader and the service client wrote, so the log a reader collects from a
+ * patched app was missing exactly the half that explains the patch. Whether those lines are collected is the
+ * collector's decision, on the far side of logcat, not something a build flag should have already decided here.
+ */
 public class XLog {
 
-    private static boolean enableLog = BuildConfig.DEBUG;
+    private static boolean enableLog = true;
 
     public static void d(String tag, String msg) {
         if (enableLog) {

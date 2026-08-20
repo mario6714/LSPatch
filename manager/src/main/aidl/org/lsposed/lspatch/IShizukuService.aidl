@@ -17,12 +17,13 @@ interface IShizukuService {
     String runShellScript(String script) = 8;
 
     // --- Continuous log collection (shell UID owns the files; the app reads them back through
-    // readLogPart, never touching the filesystem itself — cross-UID reads of /data/local/tmp are
+    // readFileChunk, never touching the filesystem itself — cross-UID reads of /data/local/tmp are
     // not otherwise permitted). Appended with fresh ids; existing ids are never renumbered. ---
 
     // Starts a collector that fans one live logcat into two rotating, timestamped streams in
-    // [logDir]: "verbose" (every line) and "framework" (lines from a uid in [relevantUids], plus
-    // AndroidRuntime warnings/errors and fatals). Kills any collector already running first.
+    // [logDir]: "verbose" (every line) and "framework" (every line from a uid in [relevantUids] --
+    // the manager, its patched apps and their modules -- plus any fatal line, whoever wrote it).
+    // Kills any collector already running first.
     boolean startLogCollector(String logDir, in int[] relevantUids) = 3;
 
     // Stops the running collector, if any.
@@ -35,17 +36,37 @@ interface IShizukuService {
     // first, each as "absolutePath\tsizeBytes".
     String[] listLogParts(String logDir, String prefix) = 6;
 
-    // Reads a part file, keeping at most [maxChars] from the tail (the newest lines).
-    String readLogPart(String path, int maxChars) = 7;
 
-    // Reads at most [maxBytes] from [path] starting at [offset], as bytes rather than text: a
-    // Binder transaction is capped around 1 MB, so anything worth exporting has to arrive in pieces,
-    // and a piece boundary that fell inside a multi-byte character would corrupt it. Returns an
-    // empty array at end of file or when the file cannot be read, which ends the caller's loop.
+
+    // Reads at most [maxBytes] from [path] starting at [offset], as bytes rather than text. Every read
+    // of a log goes through this, the screen's tail as much as the export's whole file, for two
+    // reasons. A String crosses Binder as UTF-16, which doubles a log that is very nearly ASCII; and
+    // the reply shares one ~1 MB buffer with every other transaction the process has in flight, so a
+    // single large answer fails the small ones around it. Bytes, in pieces, decoded by the caller
+    // once they are joined -- a piece boundary inside a multi-byte character would corrupt it.
+    // Returns an empty array at end of file or when the file cannot be read, ending the caller's loop.
     byte[] readFileChunk(String path, long offset, int maxBytes) = 10;
 
     // Starts a new log part on both streams without stopping the collector or deleting anything: the
     // current parts close and fresh ones open, so collection never has a gap. This is the rootless
     // equivalent of Vector's "start a new log". Returns false when no collector is running.
     boolean startNewLogPart() = 9;
+
+    // The size of a file the shell owns, so a reader can work out where its tail begins before asking
+    // for it. Zero when the file does not exist or cannot be read.
+    //
+    // A fresh id rather than the one the retired readLogPart held: a client binds to whatever shell
+    // process is already running, which is only respawned when the service version changes, so an id
+    // reused with a different signature would reach the old method and read arguments nobody wrote.
+    long fileSize(String path) = 12;
+
+    // Whether this device's logcat writes the writer's uid, which is what the framework stream is
+    // routed by and what a one-shot snapshot has to match to show the same lines.
+    boolean supportsUidColumn() = 13;
+
+    // Replaces the uid set a running collector routes by, without interrupting collection. An app
+    // patched, or a module installed, after the collector started has a uid it has never seen; the
+    // caller pushes the current set periodically so that app joins the framework stream in place.
+    // Does nothing when no collector is running -- the next start carries the set anyway.
+    void updateLogCollectorUids(in int[] relevantUids) = 11;
 }

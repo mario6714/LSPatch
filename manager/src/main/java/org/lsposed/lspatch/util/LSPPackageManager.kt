@@ -34,6 +34,8 @@ import kotlin.coroutines.suspendCoroutine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.parcelize.Parcelize
@@ -116,7 +118,29 @@ object LSPPackageManager {
         AppIconLoader(lspApp.resources.getDimensionPixelSize(android.R.dimen.app_icon_size), false, lspApp)
     private val appIcon = mutableMapOf<String, ImageBitmap>()
 
+    // One scan at a time. Two callers overlapping -- the manager's own start-up scan and the log
+    // collector waiting for the uid set -- both walk every installed package writing [appIcon], which
+    // is a plain map: a resize under a concurrent write can lose an entry, and the loss surfaces
+    // later as the non-null read in getIcon.
+    private val scanning = Mutex()
+
+    /**
+     * Scans only if nothing has scanned yet.
+     *
+     * The emptiness is checked while holding the lock, not before waiting for it: the manager's own start-up scan and
+     * the log collector's wait for the uid set begin together, and a check outside would see an empty list, queue
+     * behind the scan that was filling it, and then walk every installed package a second time -- decoding an icon
+     * apiece -- at the busiest moment there is.
+     */
+    suspend fun ensureAppList() {
+        scanning.withLock { if (appList.isEmpty()) scan() }
+    }
+
     suspend fun fetchAppList() {
+        scanning.withLock { scan() }
+    }
+
+    private suspend fun scan() {
         withContext(Dispatchers.IO) {
             val pm = lspApp.packageManager
             val collection = mutableListOf<AppInfo>()

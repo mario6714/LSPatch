@@ -12,6 +12,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -37,6 +38,15 @@ class LogCollectorService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    /**
+     * The supervisor loop, started once however often the service is asked to start.
+     *
+     * onStartCommand runs again on every start request and on the system's own restart of a sticky service, and each
+     * run used to add another loop to the same scope: several supervisors then raced to start a collector, each tearing
+     * down what it took to be the running one, leaving orphaned `logcat` children nobody drained.
+     */
+    private var supervisor: Job? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -46,13 +56,33 @@ class LogCollectorService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startAsForeground()
-        scope.launch {
+        if (supervisor?.isActive == true) return START_STICKY
+        supervisor = scope.launch {
             while (isActive) {
                 // refresh() rather than ensureReady(): this tick repeats forever, and a device
                 // without Shizuku would otherwise report the same thing to the reader on a loop.
                 // The Logs screen already explains an absent Shizuku in place.
-                if (ShizukuApi.refresh() && !ShizukuApi.isLogCollectorRunning()) {
-                    ShizukuApi.startLogCollector(LOG_DIR, relevantUids(this@LogCollectorService))
+                if (ShizukuApi.refresh()) {
+                    // The uid set is what the framework stream is routed by, and it is only right
+                    // once every installed package has been scanned. That scan is started elsewhere
+                    // and takes seconds; a collector started before it finished knew the manager's
+                    // uid alone and routed nothing else for as long as it stayed alive, which is
+                    // what left a patched app's and its modules' lines out of the stream entirely.
+                    // Guarded, because this is the one call in the tick that is not: a package
+                    // scan can throw (a package uninstalled mid-scan, a device with enough apps to
+                    // burst a binder transaction), and an exception here leaves the loop's scope
+                    // with no handler -- taking the process down, and with it collection for good,
+                    // since the supervisor is only ever started again by a fresh start command.
+                    runCatching { LSPPackageManager.ensureAppList() }
+                    val uids = relevantUids(this@LogCollectorService)
+                    if (ShizukuApi.isLogCollectorRunning()) {
+                        // An app patched, or a module installed, since the collector started has a
+                        // uid it has never seen. Pushing the current set on every tick is what lets
+                        // it join the stream in place, without a restart and without a gap.
+                        ShizukuApi.updateLogCollectorUids(uids)
+                    } else {
+                        ShizukuApi.startLogCollector(LOG_DIR, uids)
+                    }
                 }
                 delay(CHECK_INTERVAL_MS)
             }
@@ -117,12 +147,11 @@ class LogCollectorService : Service() {
         /**
          * The uids whose lines belong in the framework stream: the manager itself, and every patched app and module.
          * Each is read straight off its [android.content.pm.ApplicationInfo], so no extra PackageManager round trip is
-         * needed; the collector matches lines by these.
+         * needed; the collector matches lines by these and by nothing else.
+         *
+         * Empty of everything but the manager until the package scan has run, which is why the caller waits for it.
          */
         fun relevantUids(context: Context): IntArray {
-            // The manager's own uid is written first and the collector reads it positionally: its
-            // lines are filtered more tightly than a patched app's, because everything its UI
-            // process renders would otherwise drown the stream.
             val own = context.applicationInfo.uid
             val others = LinkedHashSet<Int>()
             LSPPackageManager.appList

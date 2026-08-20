@@ -57,6 +57,28 @@ class ShizukuService : IShizukuService.Stub() {
     @Volatile private var readerThread: Thread? = null
     @Volatile private var running = false
 
+    /**
+     * Which collector a reader belongs to.
+     *
+     * `running` alone cannot stop the right reader: a restart clears it and sets it again, so a reader that had not yet
+     * noticed the clear went on writing next to its replacement -- two readers, two live `logcat` children, and every
+     * line collected twice (seen on disk as pairs of parts opened milliseconds apart with byte-identical sizes). Each
+     * reader captures the generation it was started for and stops as soon as that is no longer the current one.
+     */
+    @Volatile private var generation = 0
+
+    /**
+     * The uids whose every line belongs in the framework stream: the manager, its patched apps and their modules.
+     *
+     * Read by the reader thread on each line rather than captured when the collector started, because the set changes
+     * while collection runs -- an app is patched, a module installed -- and [updateLogCollectorUids] replaces it in
+     * place. Volatile assignment of an immutable set, so the reader never sees a half-built one.
+     */
+    @Volatile private var relevantUids: Set<Int> = emptySet()
+
+    /** The probe's answer, which cannot change while this process lives. */
+    @Volatile private var cachedUidColumn: Boolean? = null
+
     // Set by startNewLogPart(), consumed by the reader thread on its next line: it rotates both
     // writers to fresh parts. A flag rather than a direct call because RotatingWriter is not
     // thread-safe (one writer per reader thread), so only the reader may touch it.
@@ -100,11 +122,14 @@ class ShizukuService : IShizukuService.Stub() {
     /**
      * Starts continuous log collection, fanning one live `logcat` into two rotating streams named
      * `verbose_<timestamp>.log` (every line) and `framework_<timestamp>.log`. A line joins the framework stream when it
-     * comes from a relevant uid (a patched app or a module — the manager itself only for its own tags or a warning,
-     * since its UI process emits the platform's whole rendering chatter — [relevantUids], resolved by the caller) or is
-     * an AndroidRuntime warning/error or any fatal line. Timestamped names sort chronologically by name, so no
-     * meaningless numeric suffixes.
+     * comes from one of [relevantUids] -- the manager, a patched app or a module, resolved by the caller -- or is
+     * fatal, whoever wrote it, so a tombstone or a native abort is kept even though it is logged by a system process.
+     * Nothing is judged by its tag: a module names its own, so no list of tags could know it in advance, and one that
+     * did not know it dropped exactly the lines the reader opened the screen for.
+     *
+     * Timestamped names sort chronologically by name, so no meaningless numeric suffixes.
      */
+    @Synchronized
     override fun startLogCollector(logDir: String, relevantUids: IntArray): Boolean {
         Log.i(TAG, "Starting the log collector in $logDir for ${relevantUids.size} uid(s)")
         return try {
@@ -116,7 +141,7 @@ class ShizukuService : IShizukuService.Stub() {
                 Runtime.getRuntime().exec(arrayOf("pkill", "-f", LOGCAT_MATCH)).waitFor()
             }
             // The shell UID owns this directory; the app never opens the files itself (a cross-UID
-            // read of /data/local/tmp is not permitted) — it asks for them back through readLogPart.
+            // read of /data/local/tmp is not permitted) — it asks for them back through readFileChunk.
             Runtime.getRuntime().exec(arrayOf("mkdir", "-p", logDir)).waitFor()
             Runtime.getRuntime().exec(arrayOf("chmod", "777", logDir)).waitFor()
 
@@ -127,28 +152,25 @@ class ShizukuService : IShizukuService.Stub() {
                 if (f.name.endsWith(".log") && f.lastModified() < bootTime) runCatching { f.delete() }
             }
 
-            val builder =
-                ProcessBuilder(
-                    "logcat",
-                    "-b",
-                    "main",
-                    "-b",
-                    "crash",
-                    "-b",
-                    "system",
-                    "-v",
-                    "threadtime",
-                )
+            // `-v uid` adds the writer's uid to each line, which is what the framework stream is
+            // routed by. Asking logcat is worth a probe because reading it back from /proc cannot
+            // answer for a process that has already exited -- a crash tail, or anything replayed
+            // from the buffer -- and a recycled pid answers for the wrong one.
+            val uidAware = probeUidColumn()
+            val command = buildList {
+                addAll(listOf("logcat", "-b", "main", "-b", "crash", "-b", "system"))
+                if (uidAware) addAll(listOf("-v", "uid"))
+                addAll(listOf("-v", "threadtime"))
+            }
+            val builder = ProcessBuilder(command)
             builder.redirectErrorStream(true)
             val process = builder.start()
             collector = process
             running = true
 
-            val uids = relevantUids.toHashSet()
-            // The manager's own uid is the first element the caller writes; it is filtered more
-            // tightly than the rest, so it is named rather than merely present in the set.
-            val myUid = relevantUids.firstOrNull() ?: -1
-            val thread = Thread { runReader(process, logDir, uids, myUid) }
+            this.relevantUids = relevantUids.toHashSet()
+            val mine = ++generation
+            val thread = Thread { runReader(process, logDir, mine) }
             thread.isDaemon = true
             thread.start()
             readerThread = thread
@@ -160,17 +182,19 @@ class ShizukuService : IShizukuService.Stub() {
 
     /**
      * Drains the collector's output and fans each line into the verbose stream (always) and the framework stream (when
-     * relevant). A wrapped multi-line message has no threadtime header on its continuation lines, so those inherit the
-     * routing of the entry they belong to.
+     * it belongs to a relevant uid). A wrapped multi-line message has no header on its continuation lines, so those
+     * inherit the routing of the entry they belong to.
      */
-    private fun runReader(process: Process, logDir: String, relevantUids: Set<Int>, myUid: Int) {
+    private fun runReader(process: Process, logDir: String, mine: Int) {
         val verbose = RotatingWriter(logDir, "verbose")
         val framework = RotatingWriter(logDir, "framework")
         val pidUid = HashMap<Int, Int>()
         var lastWentToFramework = false
         try {
             process.inputStream.bufferedReader().forEachLine { line ->
-                if (!running) return@forEachLine
+                // A newer collector has taken over; this reader's writers close in the finally block
+                // rather than going on writing beside its replacement.
+                if (mine != generation) return@forEachLine
                 // A "start a new log" request rolls both streams to fresh parts before this line, so
                 // the new part begins here and the closed one stays on disk as a chevron.
                 if (rotateRequested) {
@@ -179,29 +203,7 @@ class ShizukuService : IShizukuService.Stub() {
                     framework.rotate()
                 }
                 verbose.write(line)
-                val header = HEADER.find(line)
-                val toFramework =
-                    if (header != null) {
-                        val pid = header.groupValues[1].toIntOrNull() ?: -1
-                        val level = header.groupValues[2].firstOrNull() ?: ' '
-                        val tag = header.groupValues[3].trim()
-                        val uid = pidUid.getOrPut(pid) { readUid(pid) }
-                        when {
-                            // The manager is in the relevant set so the stream is never empty, but
-                            // taking *every* line it emits pulls in the platform's rendering
-                            // chatter -- Choreographer, HWUI, Surface, Resources -- from its own UI
-                            // process. That is not LSPatch's framework log, and being the bulk of
-                            // it, it is what made the live tail scroll continuously with nothing
-                            // worth reading. Only its own tags, and anything it considers a
-                            // problem, belong here.
-                            uid == myUid -> tag in OWN_TAGS || level == 'W' || level == 'E' || level == 'F'
-                            // A patched app or a module: everything it says is the point.
-                            uid in relevantUids -> true
-                            else -> (tag == "AndroidRuntime" && (level == 'W' || level == 'E')) || level == 'F'
-                        }
-                    } else {
-                        lastWentToFramework
-                    }
+                val toFramework = routes(line, pidUid) ?: lastWentToFramework
                 if (toFramework) framework.write(line)
                 lastWentToFramework = toFramework
             }
@@ -214,37 +216,89 @@ class ShizukuService : IShizukuService.Stub() {
     }
 
     /**
-     * LSPatch's own log tags.
+     * Whether a line belongs in the framework stream, or null when it carries no header -- a continuation line, which
+     * belongs wherever the entry it continues went.
      *
-     * Listed rather than matched by prefix because they do not share one -- they are class names -- and a prefix rule
-     * would either miss most of them or catch the platform's. Anything the manager logs at WARN or above is kept
-     * regardless, so a tag missing from here still cannot hide a problem; it only affects which of its *informational*
-     * lines reach the framework stream.
+     * The whole rule is the writer's uid, plus fatals from anyone: what a patched app, a module or the manager says is
+     * the log, whatever tag it says it under. [UID_HEADER] is the uid-aware form logcat writes under `-v uid`; the
+     * plain form is still parsed because the uid column is only printed where the platform permits it, and there the
+     * uid has to be read from /proc -- which only answers while the process is alive.
      */
-    private val OWN_TAGS =
-        setOf(
-            "LSPatch",
-            "LSPatch-XposedService",
-            "AppBroadcastReceiver",
-            "ConfigManager",
-            "GithubReleaseDownloader",
-            "LSPPackageManager",
-            "LocalAppsUpdater",
-            "ManageViewModel",
-            "ManagerCloak",
-            "ManagerCloakFlow",
-            "ManagerMigrate",
-            "ManagerService",
-            "ModuleDetection",
-            "ModuleManageViewModel",
-            "ModuleService",
-            "PatchInputs",
-            "PatchJobHost",
-            "PatchLogStore",
-            "PatchOutputStore",
-            "PatchRequestStore",
-            "RepoRepository",
-        )
+    private fun routes(line: String, pidUid: MutableMap<Int, Int>): Boolean? {
+        val stamped = UID_HEADER.find(line)
+        if (stamped != null) {
+            // A system uid the platform spells out by name ("radio", "wifi") is never one of ours, so
+            // it fails to parse into an int and is left to the fatal rule alone.
+            val uid = stamped.groupValues[1].toIntOrNull() ?: -1
+            val level = stamped.groupValues[4].firstOrNull() ?: ' '
+            return uid in relevantUids || level == 'F'
+        }
+        val header = HEADER.find(line) ?: return null
+        val pid = header.groupValues[1].toIntOrNull() ?: -1
+        val level = header.groupValues[2].firstOrNull() ?: ' '
+        return lookupUid(pid, pidUid) in relevantUids || level == 'F'
+    }
+
+    /**
+     * Whether this device's `logcat` writes the uid column, asked once and remembered.
+     *
+     * The flag is what the framework stream is routed by, and a collector started with an argument the binary rejects
+     * collects nothing at all, so it is only used once logcat has accepted it. Acceptance is the exit status: a binary
+     * that does not know the modifier fails outright. The output is only consulted to catch the opposite case -- a
+     * platform that takes the flag and prints nothing for it -- which is why lines in the plain form are a "no" while
+     * no lines at all are not. An empty buffer is common (a collector restarting because the buffer was cleared is one
+     * of the reasons it restarts) and used to answer "no" for a device that supports it perfectly well, leaving the
+     * routing to read uids from /proc, which cannot answer for a process that has already exited.
+     */
+    private fun probeUidColumn(): Boolean {
+        cachedUidColumn?.let {
+            return it
+        }
+        val answer = runCatching {
+            val probe =
+                ProcessBuilder("logcat", "-d", "-b", "main", "-v", "uid", "-v", "threadtime", "-t", "50")
+                    // Drained as one stream: stderr left unread can fill its pipe and block a
+                    // process this waits on, and this runs inside the collector's lock.
+                    .redirectErrorStream(true)
+                    .start()
+            val output = probe.inputStream.bufferedReader().use { it.readText() }
+            val accepted = probe.waitFor() == 0
+            probe.destroy()
+            when {
+                !accepted -> false
+                output.lineSequence().any { UID_HEADER.containsMatchIn(it) } -> true
+                // Lines, but none carrying a uid: the flag was taken and does nothing.
+                output.lineSequence().any { HEADER.containsMatchIn(it) } -> false
+                // Nothing to judge by, and the flag was accepted.
+                else -> true
+            }
+        }
+            .getOrDefault(false)
+        cachedUidColumn = answer
+        return answer
+    }
+
+    override fun supportsUidColumn(): Boolean = probeUidColumn()
+
+    /**
+     * The uid behind a pid, remembered once resolved.
+     *
+     * Only a resolved uid is cached. A pid whose process is already gone -- every line replayed from the buffer at
+     * startup, and the tail of anything that just crashed -- reads back as -1, and remembering that would answer for
+     * the live process the kernel later hands the same pid to. The cache is dropped whole once it grows past what a
+     * device's pid space makes plausible, so a long collection cannot accumulate stale entries either.
+     */
+    private fun lookupUid(pid: Int, cache: MutableMap<Int, Int>): Int {
+        cache[pid]?.let {
+            return it
+        }
+        val uid = readUid(pid)
+        if (uid >= 0) {
+            if (cache.size >= MAX_PID_CACHE) cache.clear()
+            cache[pid] = uid
+        }
+        return uid
+    }
 
     /** The uid a pid runs as, read from /proc; -1 when it cannot be resolved (already gone). */
     private fun readUid(pid: Int): Int {
@@ -265,9 +319,29 @@ class ShizukuService : IShizukuService.Stub() {
         }
     }
 
+    @Synchronized
+    override fun updateLogCollectorUids(relevantUids: IntArray) {
+        // No restart and no gap: the reader reads this set per line, so a uid added here reaches the
+        // very next line the new app writes.
+        if (!running) return
+        val updated = relevantUids.toHashSet()
+        if (updated != this.relevantUids) {
+            Log.i(TAG, "The collector now routes ${updated.size} uid(s)")
+            this.relevantUids = updated
+        }
+    }
+
+    // Synchronized with startLogCollector: two callers arriving together each stopped what they
+    // believed to be the running collector and started their own, and the one whose process was
+    // registered after the other's stop had already read the field was left alive with nobody
+    // draining it. One at a time, so a start always tears down exactly the collector that precedes it.
+    @Synchronized
     override fun stopLogCollector() {
         Log.i(TAG, "Stopping the log collector")
         running = false
+        // Retires this generation, so a reader still draining a buffered chunk stops at its next line
+        // instead of writing beside whatever replaces it.
+        generation++
         runCatching { collector?.destroy() }
         collector = null
         runCatching {
@@ -301,25 +375,7 @@ class ShizukuService : IShizukuService.Stub() {
         }
     }
 
-    override fun readLogPart(path: String, maxChars: Int): String {
-        return try {
-            val file = File(path)
-            val length = file.length()
-            val cap = maxChars.coerceAtLeast(0).toLong()
-            if (length <= cap) return file.readText()
-            // Tail read rather than reading the whole part into memory to then throw most of it away.
-            // The first line handed back may be a fragment; the caller's parser drops any line that
-            // is not a whole log entry, so a partial head costs nothing.
-            RandomAccessFile(file, "r").use { raf ->
-                raf.seek(length - cap)
-                val buffer = ByteArray(cap.toInt())
-                raf.readFully(buffer)
-                String(buffer, Charsets.UTF_8)
-            }
-        } catch (e: Exception) {
-            ""
-        }
-    }
+    override fun fileSize(path: String): Long = runCatching { File(path).length() }.getOrDefault(0L)
 
     override fun readFileChunk(path: String, offset: Long, maxBytes: Int): ByteArray {
         return try {
@@ -422,7 +478,15 @@ class ShizukuService : IShizukuService.Stub() {
         /** Its own tag, so `adb logcat -s LSPatchShell:V` follows the shell half alone. */
         const val TAG = "LSPatchShell"
 
-        const val MAX_OUTPUT_CHARS = 400_000
+        /**
+         * Tail cap on a shell command's output.
+         *
+         * It crosses as a String, which Binder writes as UTF-16 -- two bytes a character -- into the ~1 MB buffer the
+         * whole process shares with every other transaction in flight. The old cap put 800 KB in that buffer and the
+         * calls around it began failing as "transaction failed on small parcel", which is the buffer being full rather
+         * than anything having died. A quarter of the buffer leaves room for its neighbours.
+         */
+        const val MAX_OUTPUT_CHARS = 128_000
 
         /** ~4 MB per part, eight parts per stream — ~32 MB of history apiece at most. */
         const val MAX_PART_BYTES = 4L * 1024 * 1024
@@ -433,7 +497,16 @@ class ShizukuService : IShizukuService.Stub() {
 
         val STAMP_FORMAT = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS", Locale.US)
 
+        /** Beyond this many resolved pids the cache is dropped whole rather than kept growing. */
+        const val MAX_PID_CACHE = 4096
+
         // "MM-DD HH:MM:SS.mmm  PID  TID L TAG:" — enough of the threadtime header to route by.
         val HEADER = Regex("""^\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\s+(\d+)\s+\d+\s+([VDIWEFA])\s+(.*?):""")
+
+        // The same header as logcat writes it under `-v uid`: "MM-DD HH:MM:SS.mmm  UID  PID  TID L".
+        // The uid is numeric for an app and a name for some system uids, so it is captured as text and
+        // parsed by the caller. Three columns before the level, against the plain form's two, is what
+        // tells the two apart — no line can match both.
+        val UID_HEADER = Regex("""^\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\s+(\S+)\s+(\d+)\s+(\d+)\s+([VDIWEFA])\s""")
     }
 }

@@ -124,6 +124,9 @@ object ShizukuApi {
     // remedy offered is not "start Shizuku" while Shizuku is running.
     @Volatile private var hadBinder = false
 
+    // The last state refresh() reported, so it reports again only when the state is different.
+    @Volatile private var lastLoggedState: String? = null
+
     // This allows us to "await" the service connection
     private var userServiceDeferred = CompletableDeferred<IShizukuService>()
 
@@ -232,7 +235,15 @@ object ShizukuApi {
             forgetSurfaced()
         }
         if (granted) bindUserService() else releaseUserService()
-        Log.v(TAG, "refresh: binder=$alive granted=$granted shellService=$isShellServiceBound")
+        // Only when it has moved. refresh() is on the log collector's supervisor tick and on the path
+        // of every read the Logs screen makes, so tracing each call restated an unchanged answer
+        // several times a second -- and now that the framework stream keeps everything the manager
+        // says, that trace was most of what a reader saw. A state that has not changed is not news.
+        val state = "binder=$alive granted=$granted shellService=$isShellServiceBound"
+        if (state != lastLoggedState) {
+            lastLoggedState = state
+            Log.i(TAG, "State: $state")
+        }
         return granted
     }
 
@@ -260,10 +271,7 @@ object ShizukuApi {
      * answer is no, so the caller can fall back without going quiet.
      */
     fun ensureReady(op: ShizukuOp): Boolean {
-        if (refresh()) {
-            Log.v(TAG, "$op: Shizuku ready")
-            return true
-        }
+        if (refresh()) return true
         if (isBinderAvailable) {
             record(op, ShizukuReason.NotGranted, "Shizuku is running but has not granted LSPatch access")
         } else {
@@ -290,10 +298,7 @@ object ShizukuApi {
      */
     fun ensureReadyOrFallback(op: ShizukuOp): Boolean {
         val claimed = isPermissionGranted
-        if (refresh()) {
-            Log.v(TAG, "$op: Shizuku ready")
-            return true
-        }
+        if (refresh()) return true
         Log.i(TAG, "$op: falling back to the platform installer (was claiming granted: $claimed)")
         if (claimed) {
             val reason = if (isBinderAvailable) ShizukuReason.NotGranted else absentReason()
@@ -390,7 +395,6 @@ object ShizukuApi {
     private suspend fun <T> onService(op: ShizukuOp, fallback: T, block: (IShizukuService) -> T): T =
         withContext(Dispatchers.IO) {
             val service = awaitService(op) ?: return@withContext fallback
-            Log.v(TAG, "$op: shell call")
             guard(op, fallback) { block(service) }
         }
 
@@ -538,6 +542,11 @@ object ShizukuApi {
     suspend fun startLogCollector(logDir: String, relevantUids: IntArray): Boolean =
         onService(ShizukuOp.Logs, false) { it.startLogCollector(logDir, relevantUids) }
 
+    /** Replaces a running collector's uid set in place, so a newly patched app joins without a restart. */
+    suspend fun updateLogCollectorUids(relevantUids: IntArray) {
+        onService(ShizukuOp.Logs, Unit) { it.updateLogCollectorUids(relevantUids) }
+    }
+
     suspend fun stopLogCollector() {
         onService(ShizukuOp.Logs, Unit) { it.stopLogCollector() }
     }
@@ -556,15 +565,23 @@ object ShizukuApi {
             }
         }
 
-    /** Reads a collected part, keeping at most [maxChars] from its tail; null if unavailable. */
-    suspend fun readLogPart(path: String, maxChars: Int): String? =
-        onService(ShizukuOp.Logs, null) { it.readLogPart(path, maxChars) }
+    /**
+     * The size of a shell-owned file: 0 when it does not exist, and -1 when the shell could not be asked.
+     *
+     * The two are different answers. A part that has been rotated away is an empty reading; a shell that is gone is a
+     * broken one, and reporting the second as the first would tell the reader their log is empty when it is their
+     * access that failed.
+     */
+    suspend fun fileSize(path: String): Long = onService(ShizukuOp.Logs, -1L) { it.fileSize(path) }
+
+    /** Whether this device's logcat writes the uid column; false when the shell cannot be asked. */
+    suspend fun supportsUidColumn(): Boolean = onService(ShizukuOp.Logs, false) { it.supportsUidColumn() }
 
     /**
      * One slice of a shell-side file, or null when the shell is unavailable.
      *
-     * The tail-capped [readLogPart] is what a screen wants; an export wants the whole file, and the only way past the
-     * Binder transaction limit is to ask for it a piece at a time.
+     * A screen wants the tail and an export the whole file; both arrive this way, because the only way past the Binder
+     * transaction limit is to ask for it a piece at a time.
      */
     suspend fun readFileChunk(path: String, offset: Long, maxBytes: Int): ByteArray? =
         onService(ShizukuOp.Logs, null) { it.readFileChunk(path, offset, maxBytes) }
