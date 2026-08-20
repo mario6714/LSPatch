@@ -666,35 +666,20 @@ fun parseLogcat(raw: String): List<LogRow.Entry> {
 private fun isCrashTag(tag: String): Boolean = tag == "AndroidRuntime" || tag == "DEBUG" || tag == "libc"
 
 private val JAVA_MORE = Regex("""^\s*\.\.\. \d+ more$""")
-private val NATIVE_FRAME = Regex("""^\s*#\d+\s+pc\b.*""")
-
-// Flush-left lines a native tombstone prints between its indented registers and frames.
-private val NATIVE_MARKERS =
-    listOf(
-        "*** ",
-        "Build fingerprint:",
-        "Revision:",
-        "ABI:",
-        "Timestamp:",
-        "Process uptime:",
-        "Cmdline:",
-        "pid:",
-        "signal ",
-        "Abort message:",
-        "backtrace:",
-        "stack:",
-        "memory near",
-        "code around",
-    )
 
 /**
- * Whether [message] continues the crash its header began, rather than starting something new.
+ * Whether [message] is the first line of a dump: what opens a crash block, and what closes the one before it.
  *
- * Deliberately generous, because the tag is already pinned to one crash stream and the pid to one process: a run of
- * same-tag, same-pid lines under `AndroidRuntime`/`DEBUG`/`libc` is a single dump. Indented lines (frames, registers,
- * memory) are caught by their leading whitespace; the flush-left links of a Java chain and the headings of a native
- * dump are named out.
+ * Named by how a dump *begins*, because that is the part of the format that does not move: debuggerd's banner, bionic's
+ * fatal-signal notice, the runtime's uncaught-exception header. What a dump may *contain* is a growing vocabulary --
+ * `Kernel Release`, `Executable`, `uid`, `tagged_addr_ctrl` and `esr` are all headings a tombstone prints -- so a test
+ * written as a list of what belongs goes stale, and every heading it has not heard of splits one crash into two rows.
  */
+private fun opensCrash(message: String): Boolean =
+    message.startsWith("*** ") ||
+        message.startsWith("Fatal signal ") ||
+        message.startsWith("FATAL EXCEPTION")
+
 /**
  * Whether [message] is a frame of a Java stack trace.
  *
@@ -710,24 +695,20 @@ private fun continuesJavaTrace(message: String): Boolean {
     return false
 }
 
-private fun continuesCrash(message: String): Boolean {
-    if (message.isBlank()) return true
-    if (message[0] == '\t' || message[0] == ' ') return true // frames, registers, memory dumps
-    if (message.startsWith("at ")) return true
-    if (JAVA_MORE.matches(message)) return true
-    if (message.startsWith("Caused by:") || message.startsWith("Suppressed:")) return true
-    if (message.startsWith("Process:")) return true // AndroidRuntime's second line
-    if (isThrowableHeader(message)) return true // the thrown type, whether or not obfuscation kept its suffix
-    if (NATIVE_FRAME.matches(message)) return true
-    return NATIVE_MARKERS.any(message::startsWith)
-}
+/**
+ * Whether [message] continues the crash [opensCrash] opened, rather than starting something new.
+ *
+ * Everything does, up to the next dump, and it can afford to: the caller has already required the same crash tag, the
+ * same pid and the same level as the header, and a dump is written by one process at one level from beginning to end.
+ */
+private fun continuesCrash(message: String): Boolean = !opensCrash(message)
 
 /**
  * Folds each trace or crash block into one entry, then re-indexes densely.
  *
- * Two rules, because there are two kinds of block. A **crash-tagged** line (`AndroidRuntime`, `DEBUG`, `libc`) opens a
- * dump whose continuation is generous: the tag already pins it to one crash stream, so indented frames, registers and
- * native headings all belong to it.
+ * Two rules, because there are two kinds of block. A **dump line** under a crash tag (`AndroidRuntime`, `DEBUG`,
+ * `libc`) opens a block that runs until the next dump opens: tag, pid and level together already pin it to one crash
+ * stream, so every line of it -- headings, registers, frames -- belongs to it without being named.
  *
  * Every **other** tag can still print a stack trace -- `Log.w(TAG, msg, throwable)` puts the message and then its `at
  * …` frames under that tag, and a great deal of the manager's own diagnostics are logged exactly that way. Those fold
@@ -745,8 +726,17 @@ private fun foldCrashes(flat: List<LogRow.Entry>): List<LogRow.Entry> {
     var i = 0
     while (i < flat.size) {
         val head = flat[i]
-        val crash = isCrashTag(head.tag)
-        fun sameStream(row: LogRow.Entry?) = row != null && row.tag == head.tag && row.pid == head.pid
+        // A dump under a crash tag, joined either at its head or somewhere in its middle. Fatal is what tells the two
+        // apart: `libc` and `AndroidRuntime` are chatty below it and that output has to stay a line per row, but at
+        // fatal level under those tags there is nothing but a dump. That is what lets a dump the reader joined partway
+        // still read as one block -- a view of a log is a window onto its newest bytes, and a window begins where it
+        // begins, above no particular line. The runtime writes its own header below fatal, so the opener is asked for
+        // as well.
+        val crash = isCrashTag(head.tag) && (head.level == LogLevel.FATAL || opensCrash(head.message))
+        // Level as well as tag and pid: a crash dump is written at one level throughout, and it is what keeps a fatal
+        // `libc` signal apart from the warnings bionic prints under that same tag from that same process.
+        fun sameStream(row: LogRow.Entry?) =
+            row != null && row.tag == head.tag && row.pid == head.pid && row.level == head.level
         val next = flat.getOrNull(i + 1)
         val banner = !crash && !isThrowableHeader(head.message)
         val opensTrace =
@@ -773,7 +763,7 @@ private fun foldCrashes(flat: List<LogRow.Entry>): List<LogRow.Entry> {
         var j = i + 1
         while (j < flat.size) {
             val row = flat[j]
-            if (row.tag != head.tag || row.pid != head.pid || !continues(row.message)) break
+            if (!sameStream(row) || !continues(row.message)) break
             continuation += row.message
             j++
         }

@@ -30,6 +30,7 @@ import java.io.File
 import java.io.IOException
 import java.text.Collator
 import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
@@ -168,7 +169,10 @@ object LSPPackageManager {
     // does not re-open the apk or re-extract embedded modules. A Local patch draws on the manager's
     // installed-module icons; an Integrated patch has its modules baked into the apk, so their icons
     // are only recoverable by extracting each entry and loading it as an archive.
-    private val moduleIconsCache = mutableMapOf<String, List<ImageBitmap>>()
+    //
+    // Concurrent, because the Manage screen fills it from two collectors at once -- one on the installed list, one on
+    // the scope revision -- and both subscriptions deliver their first value the moment the screen opens.
+    private val moduleIconsCache = ConcurrentHashMap<String, List<ImageBitmap>>()
 
     /**
      * The icons of the modules a patched app reaches, mirroring how a module row shows the apps it reaches. Local
@@ -212,7 +216,15 @@ object LSPPackageManager {
 
     // Keyed by package and by the host apk's timestamp+length: re-patching an app replaces its apk,
     // and a cache that ignored that would keep showing the module set the app used to carry.
-    private val embeddedModulesCache = mutableMapOf<String, Pair<String, List<ModuleBinding>>>()
+    private val embeddedModulesCache = ConcurrentHashMap<String, Pair<String, List<ModuleBinding>>>()
+
+    /**
+     * One extraction at a time, so the check on [embeddedModulesCache] and the fill that follows it are one step.
+     *
+     * Without it two callers both miss the cache and both unpack the same module, which is not merely wasted work: the
+     * apk one of them is writing is the apk the other has handed to the platform to read resources out of.
+     */
+    private val extracting = Mutex()
 
     /**
      * The modules baked into an Integrated patched app, read out of its own apk.
@@ -228,41 +240,76 @@ object LSPPackageManager {
         val stamp = runCatching { File(apkPath).let { "${it.lastModified()}:${it.length()}" } }.getOrDefault("")
         embeddedModulesCache[pkg]?.let { (cachedStamp, cached) -> if (cachedStamp == stamp) return cached }
 
-        val bindings =
-            withContext(Dispatchers.IO) {
-                runCatching {
-                        val outDir = lspApp.cacheDir.resolve("embedded-modules").resolve(pkg).also { it.mkdirs() }
-                        java.util.zip.ZipFile(apkPath).use { zip ->
-                            zip.entries()
-                                .asSequence()
-                                .filter {
-                                    !it.isDirectory &&
-                                        it.name.startsWith(Constants.EMBEDDED_MODULES_ASSET_PATH) &&
-                                        it.name != Constants.EMBEDDED_MODULES_ASSET_PATH
-                                }
-                                .mapNotNull { entry ->
-                                    val fileName = entry.name.substringAfterLast('/')
-                                    if (fileName.isEmpty()) return@mapNotNull null
-                                    runCatching {
-                                        val tmp = outDir.resolve(fileName)
-                                        zip.getInputStream(entry).use { input ->
-                                            tmp.outputStream().use { output -> input.copyTo(output) }
-                                        }
-                                        bindingFromArchive(tmp, ModuleOrigin.Embedded)
-                                            // The entry name is authoritative for the package: it is what the
-                                            // loader keys on, so a manifest disagreeing with it would still
-                                            // load under the name written here.
-                                            ?.copy(packageName = fileName.removeSuffix(".apk"))
-                                    }
-                                        .getOrNull()
-                                }
-                                .toList()
-                        }
-                    }
-                    .getOrDefault(emptyList())
+        return extracting.withLock {
+            // Asked again under the lock, because whoever held it was most likely unpacking this same app: the two
+            // Manage-screen subscriptions that drive this both deliver their first value as the screen opens, so the
+            // second caller is here to read what the first one wrote, not to write it again.
+            embeddedModulesCache[pkg]?.let { (cachedStamp, cached) ->
+                if (cachedStamp == stamp) return@withLock cached
             }
-        embeddedModulesCache[pkg] = stamp to bindings
-        return bindings
+            val bindings =
+                withContext(Dispatchers.IO) {
+                    runCatching { unpackEmbeddedModules(pkg, apkPath, stamp) }.getOrDefault(emptyList())
+                }
+            embeddedModulesCache[pkg] = stamp to bindings
+            bindings
+        }
+    }
+
+    /**
+     * Unpacks the module apks a host carries into a directory named for that host apk's [stamp], and reads each one.
+     *
+     * Naming the directory after the apk it came out of, and publishing each file by rename, is what makes this safe to
+     * call more than once. Reading an apk means handing its path to the platform, which *maps* the archive rather than
+     * copying it, and the mapping outlives the call -- the framework caches an open archive by path. Unpacking over
+     * that path truncates a file some `AssetManager` is still reading through, and a mapped page that falls past the
+     * end of its file raises `SIGBUS`, which is not an exception anything can catch: the process is gone.
+     *
+     * So no file is ever written where a file already is. A new version of the host apk unpacks into a directory of its
+     * own and the previous one is deleted -- deleting leaves an existing reader's mapping intact, exactly the thing
+     * truncating does not do -- and within a directory the copy lands on a staging name and is moved into place, so a
+     * file that exists at all is a whole one and can be read again rather than written again.
+     */
+    private fun unpackEmbeddedModules(pkg: String, apkPath: String, stamp: String): List<ModuleBinding> {
+        val root = lspApp.cacheDir.resolve("embedded-modules").resolve(pkg)
+        val outDir = root.resolve(stamp.replace(':', '-').ifEmpty { "unstamped" }).also { it.mkdirs() }
+        root.listFiles()?.forEach { if (it != outDir) it.deleteRecursively() }
+        return java.util.zip.ZipFile(apkPath).use { zip ->
+            zip.entries()
+                .asSequence()
+                .filter {
+                    !it.isDirectory &&
+                        it.name.startsWith(Constants.EMBEDDED_MODULES_ASSET_PATH) &&
+                        it.name != Constants.EMBEDDED_MODULES_ASSET_PATH
+                }
+                .mapNotNull { entry ->
+                    val fileName = entry.name.substringAfterLast('/')
+                    if (fileName.isEmpty()) return@mapNotNull null
+                    runCatching {
+                        val apk = outDir.resolve(fileName)
+                        // A host apk that could not be stamped cannot be told apart from a different one, so what is
+                        // already on disk says nothing about whether it is still the right content.
+                        if (stamp.isEmpty() || !apk.exists()) {
+                            // Never mapped by anything, so this one is safe to write over.
+                            val staging = outDir.resolve("$fileName.part")
+                            zip.getInputStream(entry).use { input ->
+                                staging.outputStream().use { output -> input.copyTo(output) }
+                            }
+                            if (!staging.renameTo(apk)) {
+                                staging.delete()
+                                throw IOException("Could not publish $fileName for $pkg")
+                            }
+                        }
+                        bindingFromArchive(apk, ModuleOrigin.Embedded)
+                            // The entry name is authoritative for the package: it is what the
+                            // loader keys on, so a manifest disagreeing with it would still
+                            // load under the name written here.
+                            ?.copy(packageName = fileName.removeSuffix(".apk"))
+                    }
+                        .getOrNull()
+                }
+                .toList()
+        }
     }
 
     /** Every installed Xposed module, as bindings a patch can embed or a scope can enable. */
