@@ -13,10 +13,12 @@ import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.lsposed.lspatch.service.ManagerResidentService
 import org.lsposed.lspatch.share.LSPConfig
 import org.lsposed.lspatch.util.LSPPackageManager
@@ -52,6 +54,13 @@ class LSPLogSource(private val context: Context) : LogSource {
 
     override fun writerLabel(uid: Int): String? = writers.label(uid)
 
+    // The own-process snapshot, read once per panel visit when there is no shell. Reading it spawns
+    // `logcat`, which on Android 13+ pops the system "access all device logs" consent; the cache is
+    // what keeps the 2s live-tail poll from re-spawning it (and re-prompting) after the first read.
+    // This source is `remember`ed per Logs-screen visit, so the cache -- and thus one spawn -- is
+    // scoped to a single opening of the panel; re-entering it reads afresh.
+    @Volatile private var ownProcessSnapshot: LogcatContent? = null
+
     private val _wordWrap = MutableStateFlow(false)
     override val wordWrap: StateFlow<Boolean> = _wordWrap.asStateFlow()
 
@@ -84,20 +93,19 @@ class LSPLogSource(private val context: Context) : LogSource {
                 .map { it.first }
 
     override suspend fun open(verbose: Boolean, part: String?): Result<LogContent?> {
-        // The fallback: an app may always read its own process's log, so a manager without Shizuku
-        // is not blind — it just cannot see past itself. Worth more than an empty screen exactly
-        // when something is wrong, since a Shizuku that will not start is the case where the
-        // manager's own lines are the only account of why.
+        // A shell here reads the whole device; without one the only thing an app may read is its own
+        // log, and only by spawning `logcat` -- which on Android 13+ prompts for device-log access.
+        // So the fallback is deferred until the shell is genuinely out of reach, and then read once,
+        // at the user's own act of opening this panel, rather than on a background tick.
         if (!ShizukuApi.refresh()) {
-            val own =
-                withContext(Dispatchers.IO) { ownProcessLog() }
-                    ?: return Result.failure(IOException("the device log is not readable without Shizuku"))
-            val entries =
-                withContext(Dispatchers.Default) {
-                    parseLogcat(own).mapIndexed { i, e -> e.copy(index = i) }
-                }
-            return Result.success(LogcatContent(entries))
+            // Shizuku publishes its binder a beat after launch, so opening Logs the instant the app
+            // starts can arrive before it. Give it a short grace to appear rather than concluding it
+            // is absent and popping the consent dialog for a shell that was about to be there.
+            if (!awaitShizuku(STARTUP_GRACE_MS)) {
+                return ownProcessFallback()
+            }
         }
+        ownProcessSnapshot = null
         val prefix = streamPrefix(verbose)
         val raw =
             withContext(Dispatchers.IO) {
@@ -429,12 +437,37 @@ class LSPLogSource(private val context: Context) : LogSource {
     /** The collector's file prefix for each stream — the two it fans logcat into. */
     private fun streamPrefix(verbose: Boolean): String = if (verbose) "verbose" else "framework"
 
+    /** Waits up to [timeoutMs] for Shizuku to become usable, so a shell just starting up is not mistaken for absent. */
+    private suspend fun awaitShizuku(timeoutMs: Long): Boolean =
+        withTimeoutOrNull(timeoutMs) {
+            while (!ShizukuApi.refresh()) delay(150)
+            true
+        } ?: false
+
     /**
-     * This process's own log, read without any privilege.
+     * This process's own log as the shared screen's content, read once per panel visit.
      *
-     * logcat hands an app the entries of its own uid and no others, so no permission is needed and none is asked for;
-     * `--pid` narrows that to this process. Run in-process rather than through the shell service, because the whole
-     * point is that the shell service is what is missing.
+     * Cached because reading it spawns `logcat` (see [ownProcessLog]) and the live-tail re-calls
+     * [open] every couple of seconds; without the cache the consent dialog could re-appear on each
+     * poll. Null when even the own log cannot be read -- reported as unreachable rather than empty.
+     */
+    private suspend fun ownProcessFallback(): Result<LogContent?> {
+        ownProcessSnapshot?.let { return Result.success(it) }
+        val own =
+            withContext(Dispatchers.IO) { ownProcessLog() }
+                ?: return Result.failure(IOException("the device log is not readable without Shizuku"))
+        val entries = withContext(Dispatchers.Default) { parseLogcat(own).mapIndexed { i, e -> e.copy(index = i) } }
+        return Result.success(LogcatContent(entries).also { ownProcessSnapshot = it })
+    }
+
+    /**
+     * This process's own log, read without the shell.
+     *
+     * `logcat` hands an app the entries of its own uid and no others, and `--pid` narrows that to
+     * this process -- but on Android 13+ the `logcat` binary must hold READ_LOGS to open the log
+     * socket before it applies any filter, so spawning it at all prompts the system for device-log
+     * access. Run in-process rather than through the shell service, because the whole point is that
+     * the shell service is what is missing.
      */
     private fun ownProcessLog(): String? = runCatching {
         // `-v uid` here too: an entry parsed without that column has no writer to select by, and the
@@ -506,6 +539,15 @@ class LSPLogSource(private val context: Context) : LogSource {
         }
 
     private companion object {
+        /**
+         * How long [open] waits for a starting Shizuku before falling back to the own-process log.
+         *
+         * Shizuku's binder is published very early, so this is short: long enough to cover the launch
+         * race when the Logs panel is opened at once, short enough that a device with no Shizuku is
+         * not left spinning before it shows what it can.
+         */
+        const val STARTUP_GRACE_MS = 1_500L
+
         /** How much of a part's tail the screen reads, in bytes; fetched in [CHUNK_BYTES] pieces. */
         const val LIVE_MAX = 400_000L
 
