@@ -18,12 +18,10 @@ import kotlinx.coroutines.withContext
 import org.matrix.vector.ui.store.OnlineModule
 import org.matrix.vector.ui.store.RepoVersion
 import org.matrix.vector.ui.store.StoreCatalog
+import okhttp3.Request
 import org.matrix.vector.ui.store.StoreDataSource
+import org.lsposed.lspatch.util.LSPNetwork
 import org.lsposed.lspatch.util.LSPPackageManager
-import java.io.InputStreamReader
-import java.net.HttpURLConnection
-import java.net.URL
-import java.util.zip.GZIPInputStream
 
 /**
  * The Store's data: the online catalogue, and what this device already has of it.
@@ -32,7 +30,7 @@ import java.util.zip.GZIPInputStream
  * `backup.modules.lsposed.org`; `modules.lsposed.org` answers that path with a 403, but does serve
  * per-module `module/<package>.json`, so the public host is a genuine fallback for detail only.
  *
- * Networking is plain [HttpURLConnection] on [Dispatchers.IO]; parsing is Gson, streamed entry by
+ * Networking is the shared OkHttp client ([LSPNetwork]) on [Dispatchers.IO]; parsing is Gson, streamed entry by
  * entry so one malformed module costs that module rather than the whole catalogue.
  */
 class RepoRepository private constructor(context: Context) : StoreDataSource {
@@ -127,26 +125,21 @@ class RepoRepository private constructor(context: Context) : StoreDataSource {
     }
 
     /**
-     * Opens [url], hands the decoded (possibly gzip) body to [block] as a reader, and always closes.
-     * Returns null on any non-2xx response.
+     * Opens [url] through the shared client, hands the body to [block] as a reader, and always
+     * closes. Returns null on any non-2xx response; a network failure throws, as the callers expect.
+     *
+     * Through [LSPNetwork] so the request carries DoH and the shared disk cache — the same client
+     * the whole manager uses. OkHttp negotiates and decodes gzip transparently, so nothing here
+     * sets Accept-Encoding.
      */
     private fun <T> open(url: String, block: (JsonReader) -> T?): T? {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = TIMEOUT_MS
-            readTimeout = TIMEOUT_MS
-            setRequestProperty("User-Agent", USER_AGENT)
-            setRequestProperty("Accept-Encoding", "gzip")
-        }
-        return try {
-            if (connection.responseCode !in 200..299) {
-                Log.w(TAG, "store: $url returned HTTP ${connection.responseCode}")
+        val request = Request.Builder().url(url).header("User-Agent", USER_AGENT).build()
+        LSPNetwork.client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                Log.w(TAG, "store: $url returned HTTP ${response.code}")
                 return null
             }
-            val raw = connection.inputStream
-            val stream = if (connection.contentEncoding.equals("gzip", true)) GZIPInputStream(raw) else raw
-            JsonReader(InputStreamReader(stream, Charsets.UTF_8)).use(block)
-        } finally {
-            connection.disconnect()
+            return JsonReader(response.body.charStream()).use(block)
         }
     }
 
@@ -196,7 +189,6 @@ class RepoRepository private constructor(context: Context) : StoreDataSource {
 
     companion object {
         private const val TAG = "RepoRepository"
-        private const val TIMEOUT_MS = 15_000
         private const val USER_AGENT = "LSPatch-Manager"
 
         /** The only host serving the full list. */

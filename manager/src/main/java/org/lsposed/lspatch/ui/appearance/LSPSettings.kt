@@ -8,6 +8,7 @@ import org.matrix.vector.ui.ambience.AmbienceSettings
 import org.matrix.vector.ui.appearance.AppearanceSettings
 import org.matrix.vector.ui.locale.LocaleController
 import org.matrix.vector.ui.navigation.FloatingNavSettings
+import org.matrix.vector.ui.net.NetworkSettings
 
 /** LSPatch's brand seed (warm amber), the default accent when dynamic colour is off. */
 const val LSPATCH_SEED: Int = 0xFFE08A3C.toInt()
@@ -20,7 +21,7 @@ const val LSPATCH_SEED: Int = 0xFFE08A3C.toInt()
  * UI collects, and a setter that writes the pref and pushes the new value. Mirrors what Vector keeps
  * in its SettingsRepository, minus everything LSPatch has no use for.
  */
-object LSPSettings : AppearanceSettings, LocaleController {
+object LSPSettings : AppearanceSettings, LocaleController, NetworkSettings {
     private val prefs
         get() = lspApp.prefs
 
@@ -74,6 +75,14 @@ object LSPSettings : AppearanceSettings, LocaleController {
         _floatingNav.value = value
     }
 
+    private val _dohEnabled = MutableStateFlow(prefs.getBoolean(KEY_DOH_ENABLED, true))
+    override val dohEnabled: StateFlow<Boolean> = _dohEnabled.asStateFlow()
+
+    override fun setDohEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_DOH_ENABLED, enabled).apply()
+        _dohEnabled.value = enabled
+    }
+
     private val _appLocale = MutableStateFlow(prefs.getString(KEY_LOCALE, "") ?: "")
     override val appLocale: StateFlow<String> = _appLocale.asStateFlow()
 
@@ -97,6 +106,7 @@ object LSPSettings : AppearanceSettings, LocaleController {
     private const val KEY_AMBIENCE = "header_ambience"
     private const val KEY_LOCALE = "app_locale"
     private const val KEY_FLOATING_NAV = "floating_nav"
+    private const val KEY_DOH_ENABLED = "doh_enabled"
 }
 
 /**

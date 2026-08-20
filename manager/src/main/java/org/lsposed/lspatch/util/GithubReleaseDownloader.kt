@@ -1,11 +1,10 @@
 package org.lsposed.lspatch.util
 
 import android.util.Log
+import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
 
 object GithubReleaseDownloader {
 
@@ -62,65 +61,39 @@ object GithubReleaseDownloader {
         return Result(tag, assetName, dest)
     }
 
+    // Through the shared client ([LSPNetwork]) so the update check and download resolve the same way
+    // as the rest of the manager, DoH included. OkHttp follows the CDN redirects itself, so the
+    // manual redirect loop this used to keep is gone.
     private fun httpGetString(url: String): String {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("User-Agent", USER_AGENT)
-            connectTimeout = 30_000
-            readTimeout = 60_000
-            instanceFollowRedirects = true
-        }
-        try {
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) {
-                throw IllegalStateException("GitHub API HTTP $code: $body")
+        val request =
+            Request.Builder()
+                .url(url)
+                .header("Accept", "application/vnd.github+json")
+                .header("User-Agent", USER_AGENT)
+                .build()
+        LSPNetwork.client.newCall(request).execute().use { response ->
+            val body = response.body.string()
+            if (!response.isSuccessful) {
+                throw IllegalStateException("GitHub API HTTP ${response.code}: $body")
             }
             return body
-        } finally {
-            conn.disconnect()
         }
     }
 
     private fun httpDownload(url: String, dest: File) {
-        var current = url
-        // Follow a few redirects manually for CDN links if needed
-        repeat(5) {
-            val conn = (URL(current).openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                setRequestProperty("User-Agent", USER_AGENT)
-                setRequestProperty("Accept", "application/octet-stream")
-                connectTimeout = 30_000
-                readTimeout = 300_000
-                instanceFollowRedirects = false
+        val request =
+            Request.Builder()
+                .url(url)
+                .header("User-Agent", USER_AGENT)
+                .header("Accept", "application/octet-stream")
+                .build()
+        LSPNetwork.client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IllegalStateException("Download HTTP ${response.code}")
             }
-            try {
-                val code = conn.responseCode
-                when (code) {
-                    in 200..299 -> {
-                        conn.inputStream.use { input ->
-                            FileOutputStream(dest).use { output -> input.copyTo(output) }
-                        }
-                        return
-                    }
-                    HttpURLConnection.HTTP_MOVED_PERM,
-                    HttpURLConnection.HTTP_MOVED_TEMP,
-                    HttpURLConnection.HTTP_SEE_OTHER,
-                    307, 308 -> {
-                        current = conn.getHeaderField("Location")
-                            ?: throw IllegalStateException("Redirect without Location")
-                    }
-                    else -> {
-                        val err = conn.errorStream?.bufferedReader()?.use { it.readText() }
-                        throw IllegalStateException("Download HTTP $code: $err")
-                    }
-                }
-            } finally {
-                conn.disconnect()
+            response.body.byteStream().use { input ->
+                FileOutputStream(dest).use { output -> input.copyTo(output) }
             }
         }
-        throw IllegalStateException("Too many redirects while downloading release APK")
     }
 }

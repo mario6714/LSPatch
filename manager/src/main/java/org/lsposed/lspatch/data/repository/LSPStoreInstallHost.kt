@@ -3,8 +3,7 @@ package org.lsposed.lspatch.data.repository
 import android.content.pm.PackageInstaller
 import java.io.File
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
+import okhttp3.Request
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -13,6 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.lsposed.lspatch.lspApp
+import org.lsposed.lspatch.util.LSPNetwork
 import org.lsposed.lspatch.util.LSPPackageManager
 import org.lsposed.lspatch.util.ShizukuApi
 import org.matrix.vector.ui.store.InstallStep
@@ -75,22 +75,17 @@ class LSPStoreInstallHost(private val packageName: String) : StoreInstallHost {
         _installState.value = InstallStep.Idle
     }
 
+    // Through the shared client ([LSPNetwork]) so the download resolves the same way as the rest of
+    // the manager -- DoH included -- and follows redirects itself.
     private fun download(fileUrl: String, onProgress: (Long, Long) -> Unit): File {
         val out = File(lspApp.cacheDir, "store-${packageName}.apk")
-        val connection =
-            (URL(fileUrl).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 15_000
-                readTimeout = 30_000
-                instanceFollowRedirects = true
-                setRequestProperty("User-Agent", "LSPatch-Manager")
-            }
-        try {
-            if (connection.responseCode !in 200..299) {
-                throw IOException("HTTP ${connection.responseCode}")
-            }
-            val total = connection.contentLengthLong
+        val request = Request.Builder().url(fileUrl).header("User-Agent", "LSPatch-Manager").build()
+        LSPNetwork.client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+            val body = response.body
+            val total = body.contentLength()
             var read = 0L
-            connection.inputStream.use { input ->
+            body.byteStream().use { input ->
                 out.outputStream().use { output ->
                     val buffer = ByteArray(64 * 1024)
                     while (true) {
@@ -102,9 +97,7 @@ class LSPStoreInstallHost(private val packageName: String) : StoreInstallHost {
                     }
                 }
             }
-            return out
-        } finally {
-            connection.disconnect()
         }
+        return out
     }
 }

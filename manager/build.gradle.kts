@@ -120,6 +120,8 @@ dependencies {
     implementation(lspatch.google.accompanist.swiperefresh)
     implementation(lspatch.material)
     implementation(libs.gson)
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.dnsoverhttps)
     implementation(lspatch.rikka.shizuku.api)
     implementation(lspatch.rikka.shizuku.provider)
     implementation(lspatch.rikka.refine)
