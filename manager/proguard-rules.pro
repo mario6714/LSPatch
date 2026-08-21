@@ -9,6 +9,14 @@
    private static ** getDebugMetadataAnnotation(...) return null;
 }
 
+# The navigation routes are serialised by kotlinx.serialization, which reaches a class's generated
+# serializer through the companion it was compiled onto. Neither is called from anywhere the
+# shrinker can see.
+-keepclassmembers class **$$serializer { *** descriptor; }
+-keepclasseswithmembers class ** {
+    kotlinx.serialization.KSerializer serializer(...);
+}
+
 -keep class com.beust.jcommander.** { *; }
 # The Shizuku user service is loaded and instantiated by name in a separate app_process (shell uid)
 # by Shizuku's starter, and its methods are reached only over a binder -- neither of which R8 can
@@ -25,6 +33,13 @@
 -keep class org.lsposed.lspatch.Patcher$Options { *; }
 -keep class org.lsposed.lspatch.share.LSPConfig { *; }
 -keep class org.lsposed.lspatch.share.PatchConfig { *; }
+
+# Reflective JSON is a contract written in field names and generic signatures, and the shrinker
+# honours neither for a class nothing else pins down: it renames the fields the keys are made of,
+# drops the element type of a collection -- leaving a raw list that deserialises into maps -- and
+# removes anything it can prove is never read. These models are persisted and read back, so their
+# shape is API.
+-keep class org.lsposed.lspatch.data.model.** { *; }
 -keepclassmembers class org.lsposed.patch.LSPatch {
     private <fields>;
 }
