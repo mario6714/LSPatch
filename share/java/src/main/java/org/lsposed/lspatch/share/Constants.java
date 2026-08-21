@@ -25,5 +25,9 @@ public class Constants {
     final static public int SIGBYPASS_LV_DISABLE = 0;
     final static public int SIGBYPASS_LV_PM = 1;
     final static public int SIGBYPASS_LV_PM_OPENAT = 2;
-    final static public int SIGBYPASS_LV_MAX = 3;
+    // Level 3 adds raw-syscall coverage: a packer that reads its own apk with an inline `svc`
+    // (to slip past the libc __openat redirect of level 2) has those svc sites instrumented so the
+    // read is still pointed at the stored original. See patch-loader bypass_sig.cpp.
+    final static public int SIGBYPASS_LV_PM_OPENAT_SVC = 3;
+    final static public int SIGBYPASS_LV_MAX = 4;
 }

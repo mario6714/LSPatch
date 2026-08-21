@@ -75,9 +75,10 @@
     <string name="patch_embed_modules">Integrar módulos</string>
     <string name="patch_debuggable">Depurable</string>
     <string name="patch_sigbypass">Omisión de firma</string>
-    <string name="patch_sigbypasslv0">lv0: Desactivado</string>
-    <string name="patch_sigbypasslv1">lv1: Omitir PM</string>
-    <string name="patch_sigbypasslv2">lv2: Omitir PM + openat (libc)</string>
+    <string name="patch_sigbypasslv0">Desactivado</string>
+    <string name="patch_sigbypasslv1">+ Gestor de paquetes: la info de firma se lee como la original</string>
+    <string name="patch_sigbypasslv2">+ Lecturas de archivo: la app que lee su propio apk obtiene el original (libc)</string>
+    <string name="patch_sigbypasslv3">+ Syscalls sin procesar: detecta lecturas del apk que evitan libc</string>
     <string name="patch_return">Volver</string>
     <string name="patch_uninstall_text">Debido a las diferencias de firma, debes desinstalar la aplicación original antes de instalar la parcheada.\nAsegúrate de haber hecho una copia de seguridad de tus datos personales.</string>
     <string name="patch_install_successfully">Instalada</string>

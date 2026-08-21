@@ -75,9 +75,10 @@
     <string name="patch_embed_modules">嵌入模組</string>
     <string name="patch_debuggable">可偵錯</string>
     <string name="patch_sigbypass">簽章繞過</string>
-    <string name="patch_sigbypasslv0">lv0：關閉</string>
-    <string name="patch_sigbypasslv1">lv1：繞過 PM</string>
-    <string name="patch_sigbypasslv2">lv2：繞過 PM + openat (libc)</string>
+    <string name="patch_sigbypasslv0">關閉</string>
+    <string name="patch_sigbypasslv1">+ 套件管理員：簽章資訊讀取為原始值</string>
+    <string name="patch_sigbypasslv2">+ 檔案讀取：應用程式讀取自身 apk 時取得原始檔案 (libc)</string>
+    <string name="patch_sigbypasslv3">+ 原始系統呼叫：捕捉繞過 libc 的 apk 讀取</string>
     <string name="patch_return">返回</string>
     <string name="patch_uninstall_text">由於簽章不同，在安裝修補後的應用程式之前需要先解除安裝原應用程式。\n請確保已備份個人資料。</string>
     <string name="patch_install_successfully">已安裝</string>

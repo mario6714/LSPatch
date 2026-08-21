@@ -75,9 +75,10 @@
     <string name="patch_embed_modules">모듈 내장</string>
     <string name="patch_debuggable">디버그 가능</string>
     <string name="patch_sigbypass">서명 우회</string>
-    <string name="patch_sigbypasslv0">lv0: 끔</string>
-    <string name="patch_sigbypasslv1">lv1: PM 우회</string>
-    <string name="patch_sigbypasslv2">lv2: PM + openat (libc) 우회</string>
+    <string name="patch_sigbypasslv0">끔</string>
+    <string name="patch_sigbypasslv1">+ 패키지 관리자: 서명 정보가 원본으로 읽힘</string>
+    <string name="patch_sigbypasslv2">+ 파일 읽기: 자신의 apk를 읽는 앱이 원본을 얻음 (libc)</string>
+    <string name="patch_sigbypasslv3">+ 원시 시스템 호출: libc를 우회하는 apk 읽기를 포착</string>
     <string name="patch_return">돌아가기</string>
     <string name="patch_uninstall_text">서명이 다르기 때문에 패치된 앱을 설치하기 전에 원본 앱을 제거해야 합니다.\n개인 데이터를 백업했는지 확인하세요.</string>
     <string name="patch_install_successfully">설치됨</string>

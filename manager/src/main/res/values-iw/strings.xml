@@ -75,9 +75,10 @@
     <string name="patch_embed_modules">הטמע מודולים</string>
     <string name="patch_debuggable">ניתן לניפוי באגים</string>
     <string name="patch_sigbypass">עקיפת חתימה</string>
-    <string name="patch_sigbypasslv0">lv0: כבוי</string>
-    <string name="patch_sigbypasslv1">lv1: עקיפת PM</string>
-    <string name="patch_sigbypasslv2">lv2: עקיפת PM + openat (libc)</string>
+    <string name="patch_sigbypasslv0">כבוי</string>
+    <string name="patch_sigbypasslv1">+ מנהל החבילות: פרטי החתימה נקראים כמקוריים</string>
+    <string name="patch_sigbypasslv2">+ קריאות קובץ: אפליקציה שקוראת את ה-apk שלה מקבלת את המקורי (libc)</string>
+    <string name="patch_sigbypasslv3">+ קריאות מערכת גולמיות: תופס קריאות apk שעוקפות את libc</string>
     <string name="patch_return">חזור</string>
     <string name="patch_uninstall_text">בשל חתימות שונות, עליך להסיר את התקנת האפליקציה המקורית לפני התקנת זו עם הטלאי.\nודא שגיבית את הנתונים האישיים.</string>
     <string name="patch_install_successfully">הותקן</string>

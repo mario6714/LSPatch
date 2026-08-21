@@ -75,9 +75,10 @@
     <string name="patch_embed_modules">Incorpora moduli</string>
     <string name="patch_debuggable">Debuggabile</string>
     <string name="patch_sigbypass">Bypass firma</string>
-    <string name="patch_sigbypasslv0">lv0: Disattivato</string>
-    <string name="patch_sigbypasslv1">lv1: Bypass PM</string>
-    <string name="patch_sigbypasslv2">lv2: Bypass PM + openat (libc)</string>
+    <string name="patch_sigbypasslv0">Disattivato</string>
+    <string name="patch_sigbypasslv1">+ Gestore pacchetti: le info di firma appaiono come l\'originale</string>
+    <string name="patch_sigbypasslv2">+ Letture file: l\'app che legge il proprio apk ottiene l\'originale (libc)</string>
+    <string name="patch_sigbypasslv3">+ Syscall grezze: intercetta le letture dell\'apk che aggirano libc</string>
     <string name="patch_return">Torna</string>
     <string name="patch_uninstall_text">A causa delle firme diverse, devi disinstallare l\'app originale prima di installare quella con patch.\nAssicurati di aver eseguito il backup dei dati personali.</string>
     <string name="patch_install_successfully">Installato</string>

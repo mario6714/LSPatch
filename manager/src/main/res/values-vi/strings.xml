@@ -75,9 +75,10 @@
     <string name="patch_embed_modules">Nhúng mô-đun</string>
     <string name="patch_debuggable">Có thể gỡ lỗi</string>
     <string name="patch_sigbypass">Bỏ qua chữ ký</string>
-    <string name="patch_sigbypasslv0">lv0: Tắt</string>
-    <string name="patch_sigbypasslv1">lv1: Bỏ qua PM</string>
-    <string name="patch_sigbypasslv2">lv2: Bỏ qua PM + openat (libc)</string>
+    <string name="patch_sigbypasslv0">Tắt</string>
+    <string name="patch_sigbypasslv1">+ Trình quản lý gói: thông tin chữ ký hiển thị như bản gốc</string>
+    <string name="patch_sigbypasslv2">+ Đọc tệp: ứng dụng đọc apk của chính nó nhận được bản gốc (libc)</string>
+    <string name="patch_sigbypasslv3">+ Lời gọi hệ thống thô: bắt các lần đọc apk vượt qua libc</string>
     <string name="patch_return">Quay lại</string>
     <string name="patch_uninstall_text">Do chữ ký khác nhau, bạn cần gỡ ứng dụng gốc trước khi cài bản đã vá.\nHãy đảm bảo bạn đã sao lưu dữ liệu cá nhân.</string>
     <string name="patch_install_successfully">Đã cài đặt</string>

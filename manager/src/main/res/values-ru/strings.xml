@@ -75,9 +75,10 @@
     <string name="patch_embed_modules">Встроить модули</string>
     <string name="patch_debuggable">Отладка</string>
     <string name="patch_sigbypass">Обход подписи</string>
-    <string name="patch_sigbypasslv0">lv0: Выкл</string>
-    <string name="patch_sigbypasslv1">lv1: Обход PM</string>
-    <string name="patch_sigbypasslv2">lv2: Обход PM + openat (libc)</string>
+    <string name="patch_sigbypasslv0">Выкл</string>
+    <string name="patch_sigbypasslv1">+ Менеджер пакетов: данные подписи считываются как оригинальные</string>
+    <string name="patch_sigbypasslv2">+ Чтение файлов: приложение, читающее свой apk, получает оригинал (libc)</string>
+    <string name="patch_sigbypasslv3">+ Сырые системные вызовы: перехватывает чтения apk в обход libc</string>
     <string name="patch_return">Назад</string>
     <string name="patch_uninstall_text">Из-за разных подписей необходимо удалить оригинальное приложение перед установкой пропатченного.\nУбедитесь, что вы сохранили личные данные.</string>
     <string name="patch_install_successfully">Установлено</string>

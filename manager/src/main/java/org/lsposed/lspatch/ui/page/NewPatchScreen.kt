@@ -4,6 +4,7 @@ import org.lsposed.lspatch.ui.component.rememberAppIcon
 import org.matrix.vector.ui.show
 import org.matrix.vector.ui.SnackbarTone
 import android.content.Intent
+import android.os.Build
 import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -1094,9 +1095,15 @@ private fun EmbeddedModuleRow(module: ModuleBinding, onRemove: () -> Unit) {
     )
 }
 
-/** Signature bypass: the level, and what that level actually does, in one row. */
+/** Signature bypass: the levels stack, so each row adds to the ones checked below it. */
 @Composable
 private fun SigBypassRow(level: Int, onSelect: (Int) -> Unit) {
+    val maxLevel = remember { if ("arm64-v8a" in Build.SUPPORTED_ABIS) 3 else 2 }
+    // Graceful clamp: a persisted request carried in at lv3 on a device that cannot do it drops to
+    // this device's cap. onSelect updates the viewmodel (setSigBypassLevel), so request.sigBypassLevel
+    // becomes 2 on the next recomposition -- no crash, no out-of-range value.
+    LaunchedEffect(level, maxLevel) { if (level > maxLevel) onSelect(maxLevel) }
+    val shownLevel = level.coerceAtMost(maxLevel)
     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
@@ -1109,25 +1116,62 @@ private fun SigBypassRow(level: Int, onSelect: (Int) -> Unit) {
             Text(
                 text = stringResource(R.string.patch_sigbypass),
                 style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f),
+            )
+            // The current level as a tag; nothing checked reads as the lv0 "Off" string in words
+            // rather than a bare "lv0", so an off control still names itself without a row to spare.
+            Text(
+                text = if (shownLevel == 0) stringResource(R.string.patch_sigbypasslv0) else "lv$shownLevel",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Spacer(Modifier.height(10.dp))
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            repeat(3) { index ->
-                SegmentedButton(
-                    selected = level == index,
-                    onClick = { onSelect(index) },
-                    shape = SegmentedButtonDefaults.itemShape(index = index, count = 3),
-                    label = { Text("lv$index") },
+        Spacer(Modifier.height(6.dp))
+        // Three cumulative capabilities. A row is on when the chosen level reaches it, so choosing
+        // lv2 lights lv1 and lv2 at once -- the picture is "0..N", never "one of four", mirroring
+        // doSigBypass's sigBypassLevel >= threshold gating. Tapping a row adds it and everything
+        // under it; tapping the topmost lit row takes it back off, the way down to lv0.
+        repeat(maxLevel) { i ->
+            val threshold = i + 1
+            val active = shownLevel >= threshold
+            val delta =
+                stringResource(
+                    when (threshold) {
+                        1 -> R.string.patch_sigbypasslv1
+                        2 -> R.string.patch_sigbypasslv2
+                        else -> R.string.patch_sigbypasslv3
+                    }
+                )
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .selectable(
+                            selected = active,
+                            role = Role.Checkbox,
+                            onClick = { onSelect(if (shownLevel == threshold) threshold - 1 else threshold) },
+                        )
+                        .padding(horizontal = 8.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    if (active) Icons.Rounded.CheckBox else Icons.Rounded.CheckBoxOutlineBlank,
+                    contentDescription = null,
+                    tint =
+                        if (active) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(14.dp))
+                Text(
+                    text = delta,
+                    style = MaterialTheme.typography.bodySmall,
+                    color =
+                        if (active) MaterialTheme.colorScheme.onSurface
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = sigBypassDescription(level),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -1225,17 +1269,6 @@ private fun OptionChip(chip: OptionChipData) {
         )
     }
 }
-
-/** What the chosen signature-bypass level actually does. */
-@Composable
-private fun sigBypassDescription(level: Int) =
-    stringResource(
-        when (level) {
-            0 -> R.string.patch_sigbypasslv0
-            1 -> R.string.patch_sigbypasslv1
-            else -> R.string.patch_sigbypasslv2
-        }
-    )
 
 /**
  * What can be done right now, and what it will cost.

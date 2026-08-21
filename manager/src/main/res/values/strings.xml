@@ -94,9 +94,10 @@
     <string name="patch_embed_modules">Embed modules</string>
     <string name="patch_debuggable">Debuggable</string>
     <string name="patch_sigbypass">Signature bypass</string>
-    <string name="patch_sigbypasslv0">lv0: Off</string>
-    <string name="patch_sigbypasslv1">lv1: Bypass PM</string>
-    <string name="patch_sigbypasslv2">lv2: Bypass PM + openat (libc)</string>
+    <string name="patch_sigbypasslv0">Off</string>
+    <string name="patch_sigbypasslv1">+ Package manager: signing info reads as the original</string>
+    <string name="patch_sigbypasslv2">+ File reads: the app reading its own apk gets the original (libc)</string>
+    <string name="patch_sigbypasslv3">+ Raw syscalls: catches apk reads that bypass libc</string>
     <string name="patch_return">Return</string>
     <string name="patch_uninstall_text">The installed app is signed differently, so it must be uninstalled first. Its data will be lost — back up anything you need before continuing.</string>
     <string name="patch_install_successfully">Installed</string>

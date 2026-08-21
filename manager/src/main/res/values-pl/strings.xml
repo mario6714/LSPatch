@@ -75,9 +75,10 @@
     <string name="patch_embed_modules">Wbuduj moduły</string>
     <string name="patch_debuggable">Debugowalny</string>
     <string name="patch_sigbypass">Omijanie podpisu</string>
-    <string name="patch_sigbypasslv0">lv0: Wył.</string>
-    <string name="patch_sigbypasslv1">lv1: Omiń PM</string>
-    <string name="patch_sigbypasslv2">lv2: Omiń PM + openat (libc)</string>
+    <string name="patch_sigbypasslv0">Wyłączone</string>
+    <string name="patch_sigbypasslv1">+ Menedżer pakietów: informacje o podpisie odczytywane jako oryginał</string>
+    <string name="patch_sigbypasslv2">+ Odczyt plików: aplikacja czytająca własny apk otrzymuje oryginał (libc)</string>
+    <string name="patch_sigbypasslv3">+ Surowe wywołania systemowe: wykrywa odczyty apk omijające libc</string>
     <string name="patch_return">Wróć</string>
     <string name="patch_uninstall_text">Ze względu na różne podpisy przed instalacją spatchowanej aplikacji musisz odinstalować oryginalną.\nUpewnij się, że masz kopię zapasową danych osobistych.</string>
     <string name="patch_install_successfully">Zainstalowano</string>

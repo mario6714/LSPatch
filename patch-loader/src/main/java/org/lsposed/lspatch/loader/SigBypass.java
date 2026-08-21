@@ -57,7 +57,7 @@ public class SigBypass {
                     Log.w(TAG, "fail to get originalSignature", e);
                 }
             }
-        } catch (PackageManager.NameNotFoundException | JsonSyntaxException ignored) {
+        } catch (PackageManager.NameNotFoundException | RuntimeException ignored) {
         }
         signatures.put(packageName, replacement);
         return replacement;
@@ -193,6 +193,38 @@ public class SigBypass {
     }
 
     /**
+     * Spoofs the in-process archive parse, {@code getPackageArchiveInfo}.
+     *
+     * A tamper check often reads its own installed apk as a file --
+     * {@code getPackageArchiveInfo(getPackageResourcePath(), GET_SIGNING_CERTIFICATES)} -- to recover
+     * the signer. On API 30+ that parses the apk in-process and never routes through
+     * {@code PackageParser.generatePackageInfo} nor the {@code PackageInfo} CREATOR, so neither the
+     * parser hook nor the CREATOR proxy fires; without this the archive's real (LSPatch) key leaks.
+     * The method is declared on {@code PackageManager} itself (not overridden in
+     * ApplicationPackageManager), so it is hooked there to catch both the {@code (String,int)} and the
+     * API 33 {@code (String,PackageInfoFlags)} overloads.
+     *
+     * {@link #replaceSignature} only rewrites a package an original is held for (getReplacement returns
+     * null otherwise), so parsing a foreign archive is left untouched. At level 2+ the openat redirect
+     * already makes the parse read the stored original, so this mainly closes the gap at level 1 -- it
+     * is cheap belt-and-suspenders for the redirecting levels.
+     */
+    private static void hookPackageArchiveInfo(Context context) {
+        try {
+            XposedBridge.hookAllMethods(PackageManager.class, "getPackageArchiveInfo", new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) {
+                    if (param.getResult() instanceof PackageInfo info) {
+                        replaceSignature(context, info);
+                    }
+                }
+            });
+        } catch (Throwable t) {
+            XLog.d(TAG, "hookPackageArchiveInfo skipped: " + t.getMessage());
+        }
+    }
+
+    /**
      * Defeats the comparison-side check, {@code hasSigningCertificate}.
      *
      * Some integrity libraries never read the signature bytes; they hand the framework the original
@@ -255,6 +287,7 @@ public class SigBypass {
             hookPackageParser(context);
             proxyPackageInfoCreator(context);
             hookApplicationPackageManager(context);
+            hookPackageArchiveInfo(context);
             hookSigningCertificateCheck(context);
         }
         if (sigBypassLevel >= Constants.SIGBYPASS_LV_PM_OPENAT) {
@@ -263,6 +296,10 @@ public class SigBypass {
                 cacheApkPath = context.getCacheDir() + "/lspatch/origin/" + sourceFile.getEntry(ORIGINAL_APK_ASSET_PATH).getCrc() + ".apk";
             }
             org.matrix.vector.nativebridge.SigBypass.enableOpenatHook(context.getPackageResourcePath(), cacheApkPath);
+        }
+        if (sigBypassLevel >= Constants.SIGBYPASS_LV_PM_OPENAT_SVC) {
+            // Reuses the apk paths enableOpenatHook just recorded; must run after it.
+            org.matrix.vector.nativebridge.SigBypass.enableSvcRedirect();
         }
     }
 }
