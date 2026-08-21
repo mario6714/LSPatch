@@ -1,5 +1,8 @@
 package org.lsposed.lspatch.ui.page
 
+import org.matrix.vector.ui.AppIcon
+import org.matrix.vector.ui.show
+import org.matrix.vector.ui.SnackbarTone
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -49,6 +52,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,10 +72,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.ramcosta.composedestinations.annotation.Destination
-import com.ramcosta.composedestinations.navigation.DestinationsNavigator
-import com.ramcosta.composedestinations.result.NavResult
-import com.ramcosta.composedestinations.result.ResultRecipient
 import java.io.File
 import kotlinx.coroutines.launch
 import org.lsposed.lspatch.R
@@ -82,7 +83,8 @@ import org.lsposed.lspatch.share.Constants
 import org.lsposed.lspatch.share.LSPConfig
 import org.lsposed.lspatch.ui.component.DetailTopBar
 import org.lsposed.lspatch.ui.component.rememberExportApk
-import org.lsposed.lspatch.ui.page.destinations.SelectModulesScreenDestination
+import org.lsposed.lspatch.ui.navigation.ModuleSelection
+import org.lsposed.lspatch.ui.navigation.SelectModules
 import org.lsposed.lspatch.ui.page.manage.AppActionSheet
 import org.lsposed.lspatch.ui.util.LocalSnackbarHost
 import org.lsposed.lspatch.ui.viewmodel.AppDetailViewModel
@@ -93,6 +95,7 @@ import org.matrix.vector.ui.ApiBadge
 import org.matrix.vector.ui.ModuleRow
 import org.matrix.vector.ui.PanelEmptyState
 import org.matrix.vector.ui.SharedAlertDialog
+import org.matrix.vector.ui.navigation.Navigator
 import org.matrix.vector.ui.theme.Mono
 
 /**
@@ -107,14 +110,11 @@ import org.matrix.vector.ui.theme.Mono
  * modules will cost, the module list, the actions, and the patch details.
  */
 @OptIn(ExperimentalMaterial3Api::class)
-@Destination
 @Composable
-fun AppDetailScreen(
-    navigator: DestinationsNavigator,
-    modulesRecipient: ResultRecipient<SelectModulesScreenDestination, SelectedModules>,
-    packageName: String,
-) {
-    val viewModel = viewModel<AppDetailViewModel>()
+fun AppDetailScreen(navigator: Navigator, packageName: String) {
+    // Built with its argument rather than reading one out of a SavedStateHandle: the back stack
+    // holds routes, not bundles, so the package name is a value the screen already has.
+    val viewModel = viewModel { AppDetailViewModel(packageName) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHost = LocalSnackbarHost.current
@@ -136,9 +136,11 @@ fun AppDetailScreen(
     val busyMessage = stringResource(R.string.patch_busy)
     val forceStopDone = stringResource(R.string.manage_forcestop_done)
 
-    modulesRecipient.onNavResult { result ->
-        if (result is NavResult.Value) {
-            result.value.packageNames.forEach { if (it !in viewModel.draft) viewModel.draft.add(it) }
+    // What the module picker chose, applied once on the way back -- see ModuleSelection.
+    val selection by ModuleSelection.pending.collectAsState()
+    LaunchedEffect(selection) {
+        ModuleSelection.consume(packageName)?.forEach {
+            if (it !in viewModel.draft) viewModel.draft.add(it)
         }
     }
 
@@ -149,7 +151,7 @@ fun AppDetailScreen(
                     LSPPackageManager.getAppInfoFromApks(listOf(uri)).onSuccess { infos ->
                         infos.forEach { info ->
                             viewModel.addFromFile(File(info.app.sourceDir)) {
-                                scope.launch { snackbarHost.showSnackbar(notAModule.format(info.label)) }
+                                scope.launch { snackbarHost.show(notAModule.format(info.label), SnackbarTone.Failure) }
                             }
                         }
                     }
@@ -180,7 +182,7 @@ fun AppDetailScreen(
             DetailTopBar(
                 label = app.label,
                 packageName = app.app.packageName,
-                onBack = { navigator.navigateUp() },
+                onBack = { navigator.back() },
                 actions = {
                     IconButton(onClick = { showSheet = true }) {
                         Icon(Icons.Rounded.MoreVert, contentDescription = null)
@@ -213,7 +215,10 @@ fun AppDetailScreen(
                         if (mode == PatchMode.Local) {
                             viewModel.applyLocalScope { ok ->
                                 scope.launch {
-                                    snackbarHost.showSnackbar(if (ok) applied else applyFailed)
+                                    snackbarHost.show(
+                                        if (ok) applied else applyFailed,
+                                        if (ok) SnackbarTone.Success else SnackbarTone.Failure,
+                                    )
                                 }
                             }
                         } else {
@@ -282,7 +287,7 @@ fun AppDetailScreen(
                     onAction = {
                         scope.launch {
                             ShizukuApi.runShellCommand("am force-stop ${app.app.packageName}")
-                            snackbarHost.showSnackbar(forceStopDone)
+                            snackbarHost.show(forceStopDone, SnackbarTone.Success)
                         }
                     },
                 )
@@ -363,7 +368,7 @@ fun AppDetailScreen(
                         title = stringResource(R.string.patch_modules_add_installed),
                         subtitle = stringResource(R.string.manage_module_scope_desc),
                     ) {
-                        navigator.navigate(SelectModulesScreenDestination(initialSelected = ArrayList(viewModel.draft)))
+                        navigator.go(SelectModules(packageName, viewModel.draft.toList()))
                     }
                 }
             }
@@ -501,7 +506,7 @@ fun AppDetailScreen(
             onConfirm = {
                 showRestore = false
                 PatchJobHost.startRestore(app)
-                navigator.navigateUp()
+                navigator.back()
             },
         )
     }
@@ -516,7 +521,7 @@ fun AppDetailScreen(
                     onClick = {
                         showLeave = false
                         leaveAsked = true
-                        navigator.navigateUp()
+                        navigator.back()
                     }
                 ) {
                     Text(stringResource(R.string.appdetail_leave_discard))
@@ -558,12 +563,7 @@ private fun AppHero(
             .padding(20.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                bitmap = LSPPackageManager.getIcon(app),
-                contentDescription = null,
-                tint = Color.Unspecified,
-                modifier = Modifier.size(56.dp),
-            )
+            AppIcon(applicationInfo = app.app, contentDescription = null, size = 56.dp)
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Text(

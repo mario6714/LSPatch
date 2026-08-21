@@ -19,34 +19,31 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.ramcosta.composedestinations.annotation.Destination
-import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import org.lsposed.lspatch.data.repository.LSPStoreSettings
 import org.lsposed.lspatch.data.repository.RepoRepository
 import org.lsposed.lspatch.ui.appearance.LSPSettings
-import org.lsposed.lspatch.ui.page.destinations.RepoDetailsScreenDestination
+import org.lsposed.lspatch.ui.navigation.RepoDetails
 import org.lsposed.lspatch.util.LSPNetwork
+import org.matrix.vector.ui.navigation.Navigator
 import org.matrix.vector.ui.net.DohSettingSection
 
 /**
- * The Store tab. A thin host around the shared Store list ([org.matrix.vector.ui.store.RepoScreen]):
- * it wires LSPatch's [RepoRepository] as the data source and [LSPStoreSettings] as the settings, and
- * keeps this destination's nav identity so `RepoScreenDestination` stays the tab target. Tapping a
- * module opens LSPatch's own details screen.
+ * The Store tab. A thin host around the shared Store list ([org.matrix.vector.ui.store.RepoScreen]): it wires LSPatch's
+ * [RepoRepository] as the data source and [LSPStoreSettings] as the settings, and keeps this destination's nav identity
+ * so `RepoScreenDestination` stays the tab target. Tapping a module opens LSPatch's own details screen.
  *
- * The header carries a menu button that opens the Network sheet — the DoH switch and what the last
- * lookup did. It lives here rather than in appearance because it is about reaching the Store, and
- * this is where a user whose network cannot reach it will look.
+ * The header carries a menu button that opens the Network sheet — the DoH switch and what the last lookup did. It lives
+ * here rather than in appearance because it is about reaching the Store, and this is where a user whose network cannot
+ * reach it will look.
  */
 @OptIn(ExperimentalMaterial3Api::class)
-@Destination
 @Composable
-fun RepoScreen(navigator: DestinationsNavigator) {
+fun RepoScreen(navigator: Navigator) {
     val ctx = LocalContext.current
     var showNetwork by remember { mutableStateOf(false) }
 
     org.matrix.vector.ui.store.RepoScreen(
-        onModuleClick = { navigator.navigate(RepoDetailsScreenDestination(packageName = it)) },
+        onModuleClick = { navigator.go(RepoDetails(packageName = it)) },
         dataSource = RepoRepository.getInstance(ctx),
         settings = LSPStoreSettings,
         actions = {

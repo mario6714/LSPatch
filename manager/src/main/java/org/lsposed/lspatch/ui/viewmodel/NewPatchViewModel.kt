@@ -4,9 +4,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.toMutableStateList
-import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import java.io.File
 import kotlinx.coroutines.launch
 import org.lsposed.lspatch.data.model.ModuleBinding
 import org.lsposed.lspatch.data.model.ModuleRef
@@ -15,19 +15,15 @@ import org.lsposed.lspatch.data.model.PatchRequest
 import org.lsposed.lspatch.data.repository.PatchRequestStore
 import org.lsposed.lspatch.util.LSPPackageManager
 import org.lsposed.patch.ManifestOverrides
-import java.io.File
 
 /**
  * The patch being configured.
  *
- * Loaded from a persisted [PatchRequest] by token rather than handed in as navigation arguments, so
- * the screen comes back intact after the process is killed instead of landing on an uninitialised
- * `lateinit`. Nothing here runs the patch: that belongs to `PatchJobHost`, which outlives the
- * screen.
+ * Loaded from a persisted [PatchRequest] by token rather than carrying the request itself, so the screen comes back
+ * intact after the process is killed instead of landing on an uninitialised `lateinit`. Nothing here runs the patch:
+ * that belongs to `PatchJobHost`, which outlives the screen.
  */
-class NewPatchViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
-
-    private val token: String = savedStateHandle["token"] ?: ""
+class NewPatchViewModel(private val token: String) : ViewModel() {
 
     var request by mutableStateOf<PatchRequest?>(null)
         private set
@@ -38,9 +34,9 @@ class NewPatchViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
     /**
      * The modules to embed, as full bindings so the list can be reviewed rather than counted.
      *
-     * Kept whatever the mode is. Switching to Local used to clear it outright, which meant a user
-     * comparing the two modes lost their whole selection by looking at the other one; the request
-     * decides what is *used* ([PatchRequest.effectiveModules]) without destroying what was chosen.
+     * Kept whatever the mode is. Switching to Local used to clear it outright, which meant a user comparing the two
+     * modes lost their whole selection by looking at the other one; the request decides what is *used*
+     * ([PatchRequest.effectiveModules]) without destroying what was chosen.
      */
     val modules = mutableListOf<ModuleBinding>().toMutableStateList()
 
@@ -53,13 +49,14 @@ class NewPatchViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
         }
     }
 
-    private suspend fun bindingsFor(refs: List<ModuleRef>): List<ModuleBinding> =
-        refs.mapNotNull { ref ->
-            val file = File(ref.apkPath)
-            LSPPackageManager.moduleBindingFromFile(file)?.copy(
+    private suspend fun bindingsFor(refs: List<ModuleRef>): List<ModuleBinding> = refs.mapNotNull { ref ->
+        val file = File(ref.apkPath)
+        LSPPackageManager.moduleBindingFromFile(file)
+            ?.copy(
                 packageName = ref.packageName,
                 origin = ref.origin,
-            ) ?: ModuleBinding(
+            )
+            ?: ModuleBinding(
                 packageName = ref.packageName,
                 label = ref.packageName,
                 versionName = null,
@@ -69,7 +66,7 @@ class NewPatchViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
                 apkPath = ref.apkPath.takeIf { file.exists() },
                 origin = ref.origin,
             )
-        }
+    }
 
     private fun mutate(block: (PatchRequest) -> PatchRequest) {
         val current = request ?: return
@@ -89,8 +86,7 @@ class NewPatchViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
 
     fun setSigBypassLevel(level: Int) = mutate { it.copy(sigBypassLevel = level) }
 
-    fun setLabelOverride(label: String) =
-        mutate { it.copy(labelOverride = label.ifBlank { null }) }
+    fun setLabelOverride(label: String) = mutate { it.copy(labelOverride = label.ifBlank { null }) }
 
     fun setExtractNativeLibs(value: Boolean) = mutate { it.copy(extractNativeLibs = value) }
 
@@ -99,9 +95,9 @@ class NewPatchViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
     /**
      * Adds a permission, canonicalised and de-duplicated.
      *
-     * The name is normalised the same way the patcher's CLI normalises it -- one rule, in the patch
-     * module -- so a bare "INTERNET" and a typed-out "android.permission.INTERNET" are the same
-     * entry rather than two. A blank field or a name already in the set changes nothing.
+     * The name is normalised the same way the patcher's CLI normalises it -- one rule, in the patch module -- so a bare
+     * "INTERNET" and a typed-out "android.permission.INTERNET" are the same entry rather than two. A blank field or a
+     * name already in the set changes nothing.
      */
     fun addPermission(raw: String) = mutate {
         val name = ManifestOverrides.normalizePermission(raw)
@@ -109,19 +105,16 @@ class NewPatchViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
         else it.copy(addedPermissions = it.addedPermissions + name)
     }
 
-    fun removePermission(name: String) =
-        mutate { it.copy(addedPermissions = it.addedPermissions - name) }
+    fun removePermission(name: String) = mutate { it.copy(addedPermissions = it.addedPermissions - name) }
 
-    fun setInjectDocumentsProvider(value: Boolean) =
-        mutate { it.copy(injectDocumentsProvider = value) }
+    fun setInjectDocumentsProvider(value: Boolean) = mutate { it.copy(injectDocumentsProvider = value) }
 
     /**
      * Adds modules to the set, keeping what is already there.
      *
-     * Additive and de-duplicated by package. The old picker assigned its result over the previous
-     * selection, so embedding a second module silently discarded the first -- and the patcher keys
-     * every embedded module by its package name, so two apks for one package could not both be
-     * carried anyway.
+     * Additive and de-duplicated by package. The old picker assigned its result over the previous selection, so
+     * embedding a second module silently discarded the first -- and the patcher keys every embedded module by its
+     * package name, so two apks for one package could not both be carried anyway.
      */
     fun addModules(added: List<ModuleBinding>) {
         val existing = modules.mapTo(mutableSetOf()) { it.packageName }
@@ -138,9 +131,10 @@ class NewPatchViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
     private fun syncModules() {
         mutate { current ->
             current.copy(
-                modules = modules.mapNotNull { binding ->
-                    binding.apkPath?.let { ModuleRef(binding.packageName, it, binding.origin) }
-                }
+                modules =
+                    modules.mapNotNull { binding ->
+                        binding.apkPath?.let { ModuleRef(binding.packageName, it, binding.origin) }
+                    }
             )
         }
     }
@@ -148,8 +142,7 @@ class NewPatchViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
     /** Adds installed modules chosen by package name in the module picker. */
     fun addInstalled(packageNames: List<String>) {
         viewModelScope.launch {
-            val installed = LSPPackageManager.installedModuleBindings()
-                .filter { it.packageName in packageNames }
+            val installed = LSPPackageManager.installedModuleBindings().filter { it.packageName in packageNames }
             addModules(installed)
         }
     }

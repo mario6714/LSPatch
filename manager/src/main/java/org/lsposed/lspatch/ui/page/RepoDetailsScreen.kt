@@ -5,25 +5,23 @@ import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
-import com.ramcosta.composedestinations.annotation.Destination
-import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import org.lsposed.lspatch.data.repository.LSPStoreInstallHost
 import org.lsposed.lspatch.data.repository.LSPStoreSettings
 import org.lsposed.lspatch.data.repository.RepoRepository
+import org.matrix.vector.ui.navigation.Navigator
 
 /**
- * The module details page. A thin host over the shared `org.matrix.vector.ui.store.RepoDetailsScreen`:
- * it supplies an [LSPStoreInstallHost] so a module can be installed straight from its page — the same
- * install bar Vector shows — since a store module is an ordinary APK the manager can install.
+ * The module details page. A thin host over the shared `org.matrix.vector.ui.store.RepoDetailsScreen`: it supplies an
+ * [LSPStoreInstallHost] so a module can be installed straight from its page — the same install bar Vector shows — since
+ * a store module is an ordinary APK the manager can install.
  */
-@Destination
 @Composable
-fun RepoDetailsScreen(navigator: DestinationsNavigator, packageName: String) {
+fun RepoDetailsScreen(navigator: Navigator, packageName: String) {
     val context = LocalContext.current
     val installHost = remember(packageName) { LSPStoreInstallHost(packageName) }
     org.matrix.vector.ui.store.RepoDetailsScreen(
         packageName = packageName,
-        onNavigateBack = { navigator.navigateUp() },
+        onNavigateBack = { navigator.back() },
         onOpenUrl = { url ->
             runCatching {
                 context.startActivity(

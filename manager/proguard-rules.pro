@@ -9,6 +9,12 @@
    private static ** getDebugMetadataAnnotation(...) return null;
 }
 
+# A saved back stack names its entries by class, and the platform hands that state back to an
+# activity it recreates -- including after an update, which is exactly when a shrinker will have
+# renamed the class it names. Keeping the route names makes a restored stack readable by the build
+# that receives it rather than only by the one that wrote it.
+-keepnames class org.lsposed.lspatch.ui.navigation.** { *; }
+
 # The navigation routes are serialised by kotlinx.serialization, which reaches a class's generated
 # serializer through the companion it was compiled onto. Neither is called from anywhere the
 # shrinker can see.

@@ -4,9 +4,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.toMutableStateList
-import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import java.io.File
 import kotlinx.coroutines.launch
 import org.lsposed.lspatch.config.ConfigManager
 import org.lsposed.lspatch.data.model.ModuleBinding
@@ -17,25 +17,25 @@ import org.lsposed.lspatch.data.repository.PatchInputs
 import org.lsposed.lspatch.share.PatchConfig
 import org.lsposed.lspatch.util.LSPPackageManager
 import org.lsposed.lspatch.util.LSPPackageManager.AppInfo
-import java.io.File
 
 /** How many modules a pending edit adds and removes. */
 data class PendingChanges(val added: Int, val removed: Int) {
-    val any: Boolean get() = added > 0 || removed > 0
-    val total: Int get() = added + removed
+    val any: Boolean
+        get() = added > 0 || removed > 0
+
+    val total: Int
+        get() = added + removed
 }
 
 /**
  * One patched app: what it is, which modules it carries, and the edit in progress.
  *
- * The two modes are read from different places and applied in different ways -- Local's scope lives
- * in the manager's database and takes effect on the app's next start, Integrated's is baked into
- * the apk and takes a rebuild -- but they are edited the same way here, as a draft set against a
- * baseline, so the page above can present one list and one apply bar.
+ * The two modes are read from different places and applied in different ways -- Local's scope lives in the manager's
+ * database and takes effect on the app's next start, Integrated's is baked into the apk and takes a rebuild -- but they
+ * are edited the same way here, as a draft set against a baseline, so the page above can present one list and one apply
+ * bar.
  */
-class AppDetailViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
-
-    private val packageName: String = savedStateHandle["packageName"] ?: ""
+class AppDetailViewModel(private val packageName: String) : ViewModel() {
 
     var loading by mutableStateOf(true)
         private set
@@ -56,10 +56,10 @@ class AppDetailViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
     /**
      * The installed apk this page's contents were read from.
      *
-     * A re-patch replaces that apk while this page is in the back stack, so "the set cannot change
-     * behind our back" -- which is true of an ordinary visit -- is exactly false in the one case the
-     * page itself sends the user into. Comparing a stat of the file on the way back is cheap enough
-     * to do on every resume, and re-reads only when the app really is a different build.
+     * A re-patch replaces that apk while this page is in the back stack, so "the set cannot change behind our back" --
+     * which is true of an ordinary visit -- is exactly false in the one case the page itself sends the user into.
+     * Comparing a stat of the file on the way back is cheap enough to do on every resume, and re-reads only when the
+     * app really is a different build.
      */
     private var loadedStamp: String? = null
 
@@ -69,10 +69,11 @@ class AppDetailViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
         get() = config?.mode ?: PatchMode.Local
 
     val pending: PendingChanges
-        get() = PendingChanges(
-            added = draft.count { it !in baseline },
-            removed = baseline.count { it !in draft },
-        )
+        get() =
+            PendingChanges(
+                added = draft.count { it !in baseline },
+                removed = baseline.count { it !in draft },
+            )
 
     init {
         load()
@@ -103,8 +104,7 @@ class AppDetailViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
                 // Live, so every installed module is a candidate and the enabled set is the scope.
                 val installed = LSPPackageManager.installedModuleBindings()
                 candidates = installed
-                baseline = ConfigManager.getModulesForApp(packageName)
-                    .mapTo(mutableSetOf()) { it.pkgName }
+                baseline = ConfigManager.getModulesForApp(packageName).mapTo(mutableSetOf()) { it.pkgName }
             }
             draft.clear()
             draft.addAll(baseline)
@@ -115,14 +115,13 @@ class AppDetailViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
     /**
      * Brings the page back up to date when it is returned to.
      *
-     * Two quite different staleness cases, so two answers. If the *apk itself* has changed -- which
-     * is what a re-patch does, and this page is where a re-patch is started from -- everything shown
-     * describes a build that no longer exists, so the page is read again from scratch. Otherwise only
-     * a Local app can have moved, since its scope is shared state another screen can edit, and that
-     * is a cheap database read.
+     * Two quite different staleness cases, so two answers. If the *apk itself* has changed -- which is what a re-patch
+     * does, and this page is where a re-patch is started from -- everything shown describes a build that no longer
+     * exists, so the page is read again from scratch. Otherwise only a Local app can have moved, since its scope is
+     * shared state another screen can edit, and that is a cheap database read.
      *
-     * An edit in progress is never discarded by either path: the baseline moves so the pending count
-     * stays honest, but the draft is left as the user typed it.
+     * An edit in progress is never discarded by either path: the baseline moves so the pending count stays honest, but
+     * the draft is left as the user typed it.
      */
     fun onResume() {
         if (loading) return
@@ -148,11 +147,11 @@ class AppDetailViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
     }
 
     /** Identifies the exact build on disk: a re-patch changes its size and its timestamp. */
-    private fun stampOf(info: AppInfo): String =
-        runCatching {
-            val file = File(info.app.sourceDir)
-            "${info.app.sourceDir}:${file.lastModified()}:${file.length()}"
-        }.getOrDefault(info.app.sourceDir.orEmpty())
+    private fun stampOf(info: AppInfo): String = runCatching {
+        val file = File(info.app.sourceDir)
+        "${info.app.sourceDir}:${file.lastModified()}:${file.length()}"
+    }
+        .getOrDefault(info.app.sourceDir.orEmpty())
 
     fun toggle(modulePackage: String) {
         if (!draft.remove(modulePackage)) draft.add(modulePackage)
@@ -184,8 +183,8 @@ class AppDetailViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
     /**
      * Writes a Local app's scope. Integrated never comes here -- it goes through a re-patch.
      *
-     * On success both baseline and draft move to what was written, so the apply bar retires instead
-     * of reappearing over an edit that has already landed.
+     * On success both baseline and draft move to what was written, so the apply bar retires instead of reappearing over
+     * an edit that has already landed.
      */
     fun applyLocalScope(onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
@@ -201,6 +200,5 @@ class AppDetailViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
     }
 
     /** The drafted set, as bindings, for handing to a re-patch. */
-    fun draftedBindings(): List<ModuleBinding> =
-        candidates.filter { it.packageName in draft }
+    fun draftedBindings(): List<ModuleBinding> = candidates.filter { it.packageName in draft }
 }

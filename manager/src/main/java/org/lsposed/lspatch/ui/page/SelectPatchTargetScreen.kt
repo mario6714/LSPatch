@@ -1,5 +1,8 @@
 package org.lsposed.lspatch.ui.page
 
+import org.matrix.vector.ui.AppIcon
+import org.matrix.vector.ui.show
+import org.matrix.vector.ui.SnackbarTone
 import android.content.pm.PackageInstaller
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -39,8 +42,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.ramcosta.composedestinations.annotation.Destination
-import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.launch
@@ -50,9 +51,8 @@ import org.lsposed.lspatch.data.model.PatchOrigin
 import org.lsposed.lspatch.data.model.PatchRequest
 import org.lsposed.lspatch.data.model.PatchTarget
 import org.lsposed.lspatch.data.repository.PatchRequestStore
-import org.lsposed.lspatch.ui.page.destinations.AppDetailScreenDestination
-import org.lsposed.lspatch.ui.page.destinations.NewPatchScreenDestination
-import org.lsposed.lspatch.ui.page.destinations.SelectPatchTargetScreenDestination
+import org.lsposed.lspatch.ui.navigation.AppDetail
+import org.lsposed.lspatch.ui.navigation.NewPatch
 import org.lsposed.lspatch.ui.util.LocalSnackbarHost
 import org.lsposed.lspatch.ui.viewmodel.SelectPatchTargetViewModel
 import org.lsposed.lspatch.util.LSPPackageManager
@@ -60,6 +60,7 @@ import org.lsposed.lspatch.util.LSPPackageManager.AppInfo
 import org.matrix.vector.ui.PackageRow
 import org.matrix.vector.ui.PanelEmptyState
 import org.matrix.vector.ui.SearchField
+import org.matrix.vector.ui.navigation.Navigator
 
 // Plain apks plus app bundles: .xapk/.apks/.apkm carry no registered mime, so most file providers
 // report them as zip or octet-stream — both are allowed so a bundle can be picked and unzipped.
@@ -82,9 +83,8 @@ internal val APK_AND_BUNDLE_TYPES =
  * where it can still be abandoned.
  */
 @OptIn(ExperimentalMaterial3Api::class)
-@Destination
 @Composable
-fun SelectPatchTargetScreen(navigator: DestinationsNavigator) {
+fun SelectPatchTargetScreen(navigator: Navigator) {
     val viewModel = viewModel<SelectPatchTargetViewModel>()
     val scope = rememberCoroutineScope()
     val snackbarHost = LocalSnackbarHost.current
@@ -103,9 +103,7 @@ fun SelectPatchTargetScreen(navigator: DestinationsNavigator) {
     fun commit(request: PatchRequest) {
         scope.launch {
             val token = PatchRequestStore.put(request)
-            navigator.navigate(NewPatchScreenDestination(token = token)) {
-                popUpTo(SelectPatchTargetScreenDestination) { inclusive = true }
-            }
+            navigator.replace(NewPatch(token = token))
         }
     }
 
@@ -122,11 +120,9 @@ fun SelectPatchTargetScreen(navigator: DestinationsNavigator) {
             installing = false
             alreadyPatched = null
             if (status == PackageInstaller.STATUS_SUCCESS) {
-                navigator.navigate(AppDetailScreenDestination(packageName = app.app.packageName)) {
-                    popUpTo(SelectPatchTargetScreenDestination) { inclusive = true }
-                }
+                navigator.replace(AppDetail(packageName = app.app.packageName))
             } else {
-                snackbarHost.showSnackbar(message ?: errorUnknown)
+                snackbarHost.show(message ?: errorUnknown, SnackbarTone.Failure)
             }
         }
     }
@@ -164,7 +160,7 @@ fun SelectPatchTargetScreen(navigator: DestinationsNavigator) {
                     }
                     .onFailure {
                         reading = false
-                        snackbarHost.showSnackbar(it.message ?: errorUnknown)
+                        snackbarHost.show(it.message ?: errorUnknown, SnackbarTone.Failure)
                     }
             }
         }
@@ -174,7 +170,7 @@ fun SelectPatchTargetScreen(navigator: DestinationsNavigator) {
             TopAppBar(
                 title = { Text(stringResource(R.string.patch_select_target)) },
                 navigationIcon = {
-                    IconButton(onClick = { navigator.navigateUp() }) {
+                    IconButton(onClick = { navigator.back() }) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
                     }
                 },
@@ -229,7 +225,13 @@ fun SelectPatchTargetScreen(navigator: DestinationsNavigator) {
                     // context but dimmed and not selectable — it is managed from its own page instead.
                     val patched = app.isLSPatched
                     PackageRow(
-                        icon = LSPPackageManager.getIcon(app),
+                        icon = {
+                            AppIcon(
+                                applicationInfo = app.app,
+                                contentDescription = app.label,
+                                size = 24.dp,
+                            )
+                        },
                         label = app.label,
                         packageName = app.app.packageName,
                         modifier =

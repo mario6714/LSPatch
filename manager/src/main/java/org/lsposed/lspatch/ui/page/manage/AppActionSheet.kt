@@ -1,5 +1,8 @@
 package org.lsposed.lspatch.ui.page.manage
 
+import org.matrix.vector.ui.AppIcon
+import org.matrix.vector.ui.show
+import org.matrix.vector.ui.SnackbarTone
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
@@ -70,7 +73,7 @@ fun AppActionSheet(app: AppInfo, onDismiss: () -> Unit) {
                 // The application scope, not the sheet's: the sheet is gone by the time this lands.
                 lspApp.globalScope.launch {
                     LSPPackageManager.fetchAppList()
-                    snackbarHost.showSnackbar(uninstalled)
+                    snackbarHost.show(uninstalled, SnackbarTone.Success)
                 }
             }
         }
@@ -85,11 +88,7 @@ fun AppActionSheet(app: AppInfo, onDismiss: () -> Unit) {
                 label = app.label,
                 packageName = app.app.packageName,
                 icon = {
-                    Icon(
-                        bitmap = LSPPackageManager.getIcon(app),
-                        contentDescription = null,
-                        tint = Color.Unspecified,
-                    )
+                    AppIcon(applicationInfo = app.app, contentDescription = null, size = 24.dp)
                 },
             )
             HorizontalDivider(Modifier.padding(horizontal = 24.dp, vertical = 4.dp))
@@ -117,10 +116,10 @@ fun AppActionSheet(app: AppInfo, onDismiss: () -> Unit) {
                 // is cancelled the instant the sheet leaves the composition, which it does immediately.
                 lspApp.globalScope.launch {
                     if (!ShizukuApi.isPermissionGranted) {
-                        snackbarHost.showSnackbar(shizukuUnavailable)
+                        snackbarHost.show(shizukuUnavailable, SnackbarTone.Failure)
                     } else {
                         ShizukuApi.runShellCommand("am force-stop ${app.app.packageName}")
-                        snackbarHost.showSnackbar(forceStopped)
+                        snackbarHost.show(forceStopped, SnackbarTone.Success)
                     }
                 }
             }
@@ -148,7 +147,7 @@ fun AppActionSheet(app: AppInfo, onDismiss: () -> Unit) {
                 onDismiss()
                 scope.launch {
                     if (!ShizukuApi.isPermissionGranted) {
-                        snackbarHost.showSnackbar(shizukuUnavailable)
+                        snackbarHost.show(shizukuUnavailable, SnackbarTone.Failure)
                     } else {
                         viewModel.dispatch(AppManageViewModel.ViewAction.PerformOptimize(app))
                     }

@@ -1,6 +1,5 @@
 package org.lsposed.lspatch.ui.page
 
-import android.os.Parcelable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,40 +32,28 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.ramcosta.composedestinations.annotation.Destination
-import com.ramcosta.composedestinations.result.ResultBackNavigator
-import kotlinx.parcelize.Parcelize
 import org.lsposed.lspatch.R
+import org.lsposed.lspatch.ui.navigation.ModuleSelection
 import org.lsposed.lspatch.ui.viewmodel.SelectModulesViewModel
 import org.matrix.vector.ui.ApiBadge
 import org.matrix.vector.ui.ModuleRow
 import org.matrix.vector.ui.PanelEmptyState
 import org.matrix.vector.ui.SearchField
-
-/**
- * What the module picker hands back.
- *
- * Package names only. The result travels through the back stack's saved state, which is written
- * into the process's saved instance state -- so returning whole `ApplicationInfo` objects, as the
- * old shared result type did, meant serialising the system's own package records on every save.
- * The caller has the bindings already; a name is enough to say which.
- */
-@Parcelize
-data class SelectedModules(val packageNames: ArrayList<String>) : Parcelable
+import org.matrix.vector.ui.navigation.Navigator
 
 /**
  * Picks installed Xposed modules to embed in a patch.
  *
- * A destination of its own with its own result type, rather than a flag on a shared app picker.
- * The two pickers answer different questions and returned through one untyped channel, which is
- * how a screen expecting one app could be handed a list of modules and cast it blindly.
+ * A destination of its own, rather than a flag on a shared app picker: the two pickers answer different questions, and
+ * they used to answer through one untyped channel -- which is how a screen expecting one app could be handed a list of
+ * modules and cast it blindly. What this one chose is left in [ModuleSelection] for whichever screen opened it.
  */
 @OptIn(ExperimentalMaterial3Api::class)
-@Destination
 @Composable
 fun SelectModulesScreen(
-    navigator: ResultBackNavigator<SelectedModules>,
-    initialSelected: ArrayList<String>?,
+    navigator: Navigator,
+    requestedBy: String,
+    initialSelected: List<String>,
 ) {
     val viewModel = viewModel<SelectModulesViewModel>()
     var query by remember { mutableStateOf("") }
@@ -74,7 +61,7 @@ fun SelectModulesScreen(
     // Keyed on the loaded list, not on first composition: seeding before the module list has been
     // read leaves nothing selected, and seeding again on every recomposition accumulates.
     LaunchedEffect(viewModel.modules) {
-        if (viewModel.modules.isNotEmpty()) viewModel.seed(initialSelected.orEmpty())
+        if (viewModel.modules.isNotEmpty()) viewModel.seed(initialSelected)
     }
 
     Scaffold(
@@ -82,7 +69,7 @@ fun SelectModulesScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.select_modules_title)) },
                 navigationIcon = {
-                    IconButton(onClick = { navigator.navigateBack() }) {
+                    IconButton(onClick = { navigator.back() }) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
                     }
                 },
@@ -93,9 +80,8 @@ fun SelectModulesScreen(
                 Column(Modifier.padding(20.dp)) {
                     Button(
                         onClick = {
-                            navigator.navigateBack(
-                                SelectedModules(ArrayList(viewModel.selected))
-                            )
+                            ModuleSelection.offer(requestedBy, viewModel.selected.toList())
+                            navigator.back()
                         },
                         enabled = viewModel.selected.isNotEmpty(),
                         modifier = Modifier.fillMaxWidth(),
@@ -120,12 +106,11 @@ fun SelectModulesScreen(
             val shown = viewModel.filtered(query)
             if (shown.isEmpty()) {
                 PanelEmptyState(
-                    icon = if (viewModel.modules.isEmpty()) Icons.Rounded.Extension
-                    else Icons.Rounded.SearchOff,
-                    text = stringResource(
-                        if (viewModel.modules.isEmpty()) R.string.select_modules_none
-                        else R.string.manage_no_match
-                    ),
+                    icon = if (viewModel.modules.isEmpty()) Icons.Rounded.Extension else Icons.Rounded.SearchOff,
+                    text =
+                        stringResource(
+                            if (viewModel.modules.isEmpty()) R.string.select_modules_none else R.string.manage_no_match
+                        ),
                 )
                 return@Column
             }

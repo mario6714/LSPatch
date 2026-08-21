@@ -79,17 +79,26 @@ class ModuleManageViewModel : ViewModel() {
 
     private suspend fun refreshScopes() {
         val labels = LSPPackageManager.appList.associate { it.app.packageName to it.label }
-        val icons = LSPPackageManager.appList.associate { it.app.packageName to LSPPackageManager.getIcon(it) }
+        val byPackage = LSPPackageManager.appList.associateBy { it.app.packageName }
         val modules = LSPPackageManager.appList.filter { it.isXposedModule }
         val labelMap = HashMap<String, List<String>>()
         val iconMap = HashMap<String, List<ImageBitmap>>()
+        // Rasterised for the apps some module actually reaches, not for every app installed: this
+        // runs again on every scope change, and decoding a few hundred drawables to draw a dozen is
+        // work nobody sees.
+        val icons = HashMap<String, ImageBitmap>()
+        suspend fun iconOf(packageName: String): ImageBitmap? =
+            icons[packageName]
+                ?: byPackage[packageName]?.let { LSPPackageManager.loadIcon(it) }?.also {
+                    icons[packageName] = it
+                }
         modules.forEach { module ->
             val apps = ConfigManager.getAppsForModule(module.app.packageName)
             labelMap[module.app.packageName] = apps.map { labels[it] ?: it }.sorted()
             // Keep the icons in the same sorted order as the labels, so the preview icons are the
             // first apps the reach lists rather than an arbitrary set.
             iconMap[module.app.packageName] =
-                apps.sortedBy { labels[it] ?: it }.mapNotNull { icons[it] }
+                apps.sortedBy { labels[it] ?: it }.mapNotNull { iconOf(it) }
         }
         appliesTo = labelMap
         appliesToIcons = iconMap

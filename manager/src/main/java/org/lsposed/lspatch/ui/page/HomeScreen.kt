@@ -1,5 +1,10 @@
 package org.lsposed.lspatch.ui.page
 
+import org.matrix.vector.ui.SheetAction
+import androidx.compose.material.icons.rounded.Reorder
+import org.lsposed.lspatch.ui.component.rememberAppIcons
+import org.matrix.vector.ui.show
+import org.matrix.vector.ui.SnackbarTone
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -74,9 +79,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.ramcosta.composedestinations.annotation.Destination
-import com.ramcosta.composedestinations.annotation.RootNavGraph
-import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -98,9 +100,9 @@ import org.lsposed.lspatch.ui.component.ShizukuSheet
 import org.lsposed.lspatch.ui.component.StayAliveSheet
 import org.lsposed.lspatch.ui.component.hasNotificationPermission
 import org.lsposed.lspatch.ui.component.isIgnoringBatteryOptimizations
-import org.lsposed.lspatch.ui.page.destinations.ManageScreenDestination
-import org.lsposed.lspatch.ui.page.destinations.NewPatchScreenDestination
-import org.lsposed.lspatch.ui.page.destinations.UpdateScreenDestination
+import org.lsposed.lspatch.ui.navigation.NewPatch
+import org.lsposed.lspatch.ui.navigation.TopLevelRoute
+import org.lsposed.lspatch.ui.navigation.Update
 import org.lsposed.lspatch.ui.util.LocalSnackbarHost
 import org.lsposed.lspatch.ui.viewmodel.HomeViewModel
 import org.lsposed.lspatch.util.LSPPackageManager
@@ -117,7 +119,9 @@ import org.matrix.vector.ui.UpdatableVersion
 import org.matrix.vector.ui.ambience.AmbienceKind
 import org.matrix.vector.ui.appearance.AppearanceSheet
 import org.matrix.vector.ui.locale.LanguageSheet
+import org.matrix.vector.ui.navigation.Navigator
 import org.matrix.vector.ui.theme.Mono
+import org.matrix.vector.ui.R as UiR
 
 /**
  * The dashboard, copying Vector's Home: a living, immersive status header carrying the app's identity and its running
@@ -126,10 +130,8 @@ import org.matrix.vector.ui.theme.Mono
  * the patch button; and the activity feed is replaced by the system properties, which are the substance of this page.
  */
 @OptIn(ExperimentalMaterial3Api::class)
-@RootNavGraph(start = true)
-@Destination
 @Composable
-fun HomeScreen(navigator: DestinationsNavigator) {
+fun HomeScreen(navigator: Navigator) {
     var isIntentLaunched by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     // Not `context as Activity`: under an in-app language override the context is a LocalizedContext
@@ -168,7 +170,7 @@ fun HomeScreen(navigator: DestinationsNavigator) {
                                 )
                             )
                         withContext(Dispatchers.Main) {
-                            navigator.navigate(NewPatchScreenDestination(token = token))
+                            navigator.go(NewPatch(token = token))
                         }
                     }
                 }
@@ -237,7 +239,7 @@ fun HomeScreen(navigator: DestinationsNavigator) {
                         markColor = contentColor,
                         modifier =
                             Modifier.clickable {
-                                navigator.navigate(UpdateScreenDestination())
+                                navigator.go(Update)
                             },
                     )
                 },
@@ -294,6 +296,22 @@ fun HomeScreen(navigator: DestinationsNavigator) {
                     subtitle = stringResource(R.string.appearance_floating_nav_summary),
                     checked = floatingNav,
                     onCheckedChange = { LSPSettings.setFloatingNav(it) },
+                )
+                SheetAction(
+                    title = stringResource(UiR.string.settings_rearrange_panels),
+                    icon = Icons.Rounded.Reorder,
+                    onClick = {
+                        // Edit mode and the dismissal in the one click, and deliberately without
+                        // animating the sheet out first: hiding it through its own sheetState would
+                        // leave this sheet's window, scrim and all, over the container for the
+                        // length of the animation, and the first thing anyone does in edit mode is
+                        // drag an item. Dropping the sheet out of composition takes its window with
+                        // it in the same frame the container enters edit mode, so the first touch
+                        // that lands, lands on a panel.
+                        navigator.editingPanels = true
+                        showAppearance = false
+                    },
+                    subtitle = stringResource(UiR.string.settings_rearrange_panels_summary),
                 )
             },
         )
@@ -383,7 +401,7 @@ private val deviceName = buildString {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SystemPropertiesCard(navigator: DestinationsNavigator) {
+private fun SystemPropertiesCard(navigator: Navigator) {
     val context = LocalContext.current
     val snackbarHost = LocalSnackbarHost.current
     val scope = rememberCoroutineScope()
@@ -414,21 +432,20 @@ private fun SystemPropertiesCard(navigator: DestinationsNavigator) {
     val openShizuku: () -> Unit = { showShizukuSheet = true }
 
     val toApplications = {
-        navigator.navigate(ManageScreenDestination(initialTab = 0))
+        LSPSettings.setManageTab(0)
+        navigator.switchTo(TopLevelRoute.Manage)
         Unit
     }
     val toModules = {
-        navigator.navigate(ManageScreenDestination(initialTab = 1))
+        LSPSettings.setManageTab(1)
+        navigator.switchTo(TopLevelRoute.Manage)
         Unit
     }
     // The counts are shown as the actual app icons rather than a bare number — the same way Vector
     // presents a set of packages — with a +N overflow when there are more than the row can hold.
     val patchedIcons =
-        apps
-            .filter { it.app.metaData?.containsKey("lspatch") == true }
-            .mapNotNull { runCatching { LSPPackageManager.getIcon(it) }.getOrNull() }
-    val moduleIcons =
-        apps.filter { it.isModule }.mapNotNull { runCatching { LSPPackageManager.getIcon(it) }.getOrNull() }
+        rememberAppIcons(apps.filter { it.app.metaData?.containsKey("lspatch") == true })
+    val moduleIcons = rememberAppIcons(apps.filter { it.isModule })
 
     // The manager's own installed package. Surfaced here, next to the environment facts, because it
     // is the one identity a detector enumerates the device for -- and because that is the guiding
@@ -494,7 +511,7 @@ private fun SystemPropertiesCard(navigator: DestinationsNavigator) {
         }
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cm.setPrimaryClip(ClipData.newPlainText("LSPatch", lines.joinToString("\n")))
-        scope.launch { snackbarHost.showSnackbar(copied) }
+        scope.launch { snackbarHost.show(copied, SnackbarTone.Success) }
     }
 
     ElevatedCard(

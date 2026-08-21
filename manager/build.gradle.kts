@@ -14,12 +14,28 @@ plugins {
     alias(lspatch.plugins.compose.compiler)
     alias(lspatch.plugins.google.devtools.ksp)
     alias(lspatch.plugins.rikka.tools.refine)
+    alias(lspatch.plugins.kotlin.serialization)
     id("org.jetbrains.kotlin.plugin.parcelize")
 }
 
 android {
     defaultConfig {
         applicationId = defaultManagerPackageName
+
+        // The languages the picker offers, listed from the resource folders that carry our own
+        // strings.xml -- so one appears the moment a translator's folder lands, and none is offered
+        // for a language nothing is translated into. Deliberately not AssetManager.getLocales(),
+        // which reports every locale any dependency ships a resource for, pseudo-locales included.
+        val translations =
+            (listOf("en") +
+                    file("src/main/res")
+                        .listFiles()
+                        .orEmpty()
+                        .filter { it.isDirectory && it.name.startsWith("values-") }
+                        .filter { File(it, "strings.xml").exists() }
+                        .map { it.name.removePrefix("values-").replace("-r", "-") })
+                .sorted()
+        buildConfigField("String", "TRANSLATIONS", "\"${translations.joinToString(",")}\"")
     }
 
     androidResources {
@@ -46,14 +62,6 @@ android {
     }
 
     namespace = "org.lsposed.lspatch"
-}
-
-// Pinned, not inferred. compose-destinations otherwise derives the generated package from the
-// longest common prefix of every @Destination composable, so adding one destination outside
-// ui.page would silently move NavGraphs and ui.page.destinations.* up a level and break every
-// import that names them.
-ksp {
-    arg("compose-destinations.codeGenPackageName", "org.lsposed.lspatch.ui.page")
 }
 
 afterEvaluate {
@@ -111,11 +119,12 @@ dependencies {
     implementation(lspatch.androidx.compose.ui.tooling.preview)
     implementation(lspatch.androidx.core.ktx)
     implementation(lspatch.androidx.lifecycle.viewmodel.compose)
-    implementation(lspatch.androidx.navigation.compose)
+    implementation(lspatch.androidx.navigation3.runtime)
+    implementation(lspatch.androidx.navigation3.ui)
+    implementation(lspatch.androidx.lifecycle.viewmodel.navigation3)
     implementation(lspatch.androidx.preference)
     implementation(lspatch.androidx.room.ktx)
     implementation(lspatch.androidx.room.runtime)
-    implementation(lspatch.google.accompanist.navigation.animation)
     implementation(lspatch.google.accompanist.pager)
     implementation(lspatch.google.accompanist.swiperefresh)
     implementation(lspatch.material)
@@ -125,9 +134,6 @@ dependencies {
     implementation(lspatch.rikka.shizuku.api)
     implementation(lspatch.rikka.shizuku.provider)
     implementation(lspatch.rikka.refine)
-    implementation(lspatch.raamcosta.compose.destinations)
-    implementation(lspatch.appiconloader)
     implementation(lspatch.hiddenapibypass)
     ksp(lspatch.androidx.room.compiler)
-    ksp(lspatch.raamcosta.compose.destinations.ksp)
 }

@@ -3,6 +3,7 @@ package org.lsposed.lspatch.ui.page
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.net.Uri
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,7 +15,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
@@ -38,28 +38,26 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.ramcosta.composedestinations.annotation.Destination
-import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import org.lsposed.lspatch.R
 import org.lsposed.lspatch.lspApp
 import org.lsposed.lspatch.share.LSPConfig
 import org.lsposed.lspatch.ui.viewmodel.UpdateViewModel
+import org.matrix.vector.ui.navigation.Navigator
 import org.matrix.vector.ui.store.StoreHtmlPane
 import org.matrix.vector.ui.store.releaseMarkdownToHtml
 import org.matrix.vector.ui.update.VariantChoice
 import org.matrix.vector.ui.update.VariantPicker
 
 /**
- * The full-screen self-update page, modelled on Vector's `FrameworkUpdateScreen` but for the
- * manager apk: the top bar names the build and channel, the body renders the release notes through
- * the shared `StoreHtmlPane`, and the bottom bar carries the whole download-and-install act. It is
- * reachable from the version line whether or not an update exists, so "up to date" and a re-check
- * are always in reach — the same contract the old sheet held, now given the room the notes need.
+ * The full-screen self-update page, modelled on Vector's `FrameworkUpdateScreen` but for the manager apk: the top bar
+ * names the build and channel, the body renders the release notes through the shared `StoreHtmlPane`, and the bottom
+ * bar carries the whole download-and-install act. It is reachable from the version line whether or not an update
+ * exists, so "up to date" and a re-check are always in reach — the same contract the old sheet held, now given the room
+ * the notes need.
  */
 @OptIn(ExperimentalMaterial3Api::class)
-@Destination
 @Composable
-fun UpdateScreen(navigator: DestinationsNavigator) {
+fun UpdateScreen(navigator: Navigator) {
     val vm = viewModel<UpdateViewModel>()
     val update = vm.update
     val stage = vm.updateStage
@@ -72,9 +70,7 @@ fun UpdateScreen(navigator: DestinationsNavigator) {
 
     val openUrl: (String) -> Unit = { url ->
         runCatching {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
     }
 
@@ -91,8 +87,7 @@ fun UpdateScreen(navigator: DestinationsNavigator) {
                         Text(
                             text =
                                 stringResource(
-                                    if (debuggable) R.string.update_channel_debug
-                                    else R.string.update_channel_release
+                                    if (debuggable) R.string.update_channel_debug else R.string.update_channel_release
                                 ),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -100,7 +95,7 @@ fun UpdateScreen(navigator: DestinationsNavigator) {
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = { navigator.navigateUp() }) {
+                    IconButton(onClick = { navigator.back() }) {
                         Icon(
                             Icons.AutoMirrored.Rounded.ArrowBack,
                             contentDescription = stringResource(R.string.update_back),
@@ -108,9 +103,7 @@ fun UpdateScreen(navigator: DestinationsNavigator) {
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = { openUrl(update?.url ?: "${UpdateViewModel.REPO_URL}/releases") }
-                    ) {
+                    IconButton(onClick = { openUrl(update?.url ?: "${UpdateViewModel.REPO_URL}/releases") }) {
                         Icon(
                             Icons.AutoMirrored.Rounded.OpenInNew,
                             contentDescription = stringResource(R.string.update_open_release),
@@ -130,8 +123,7 @@ fun UpdateScreen(navigator: DestinationsNavigator) {
                 checking = checking,
                 stage = stage,
                 // The Release/Debug choice, driven by the shared manager-ui picker.
-                variantChoices =
-                    update?.apks?.map { VariantChoice(it.key, it.sizeInBytes, it.name) }.orEmpty(),
+                variantChoices = update?.apks?.map { VariantChoice(it.key, it.sizeInBytes, it.name) }.orEmpty(),
                 selectedVariant = vm.chosenVariant,
                 onSelectVariant = vm::chooseVariant,
                 onInstall = { vm.downloadAndInstall() },
@@ -143,9 +135,12 @@ fun UpdateScreen(navigator: DestinationsNavigator) {
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
             val html =
                 remember(update?.notes) {
-                    update?.notes?.takeIf { it.isNotBlank() }?.let {
-                        releaseMarkdownToHtml(it, "https://github.com/JingMatrix/LSPatch")
-                    }
+                    update
+                        ?.notes
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let {
+                            releaseMarkdownToHtml(it, "https://github.com/JingMatrix/LSPatch")
+                        }
                 }
             when {
                 // Notes render whenever the latest release carries a body -- even up to date, which
@@ -181,9 +176,9 @@ private fun Empty(text: String) {
 }
 
 /**
- * The bottom install bar, mirroring Vector's `UpdateBar` shape: a running download or install shows
- * progress and its label, a failure offers a retry, and while idle the primary action is either
- * download-and-install (when a release is in hand) or a re-check.
+ * The bottom install bar, mirroring Vector's `UpdateBar` shape: a running download or install shows progress and its
+ * label, a failure offers a retry, and while idle the primary action is either download-and-install (when a release is
+ * in hand) or a re-check.
  */
 @Composable
 private fun UpdateBar(
@@ -263,42 +258,37 @@ private fun UpdateBar(
                             onClick = { if (hasApk) onInstall() else onOpenReleases() },
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Text(
-                                stringResource(
-                                    if (hasApk) R.string.update_install
-                                    else R.string.update_open_release
-                                )
-                            )
+                            Text(stringResource(if (hasApk) R.string.update_install else R.string.update_open_release))
                         }
                     } else if (upToDate) {
-                    // On the newest build: say so, keep a re-check within reach, and -- as Vector
-                    // does -- still offer to install the matching apk, since a reinstall of the same
-                    // build is a legitimate want (repair, or re-apply the current release).
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Rounded.CheckCircle,
-                                contentDescription = null,
-                                tint = colors.primary,
-                                modifier = Modifier.size(20.dp),
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                text = stringResource(R.string.update_up_to_date),
-                                style = MaterialTheme.typography.labelLarge,
-                                modifier = Modifier.weight(1f),
-                            )
-                            TextButton(onClick = onCheck, enabled = !checking) {
-                                Text(stringResource(R.string.update_check))
+                        // On the newest build: say so, keep a re-check within reach, and -- as Vector
+                        // does -- still offer to install the matching apk, since a reinstall of the same
+                        // build is a legitimate want (repair, or re-apply the current release).
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Rounded.CheckCircle,
+                                    contentDescription = null,
+                                    tint = colors.primary,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    text = stringResource(R.string.update_up_to_date),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                TextButton(onClick = onCheck, enabled = !checking) {
+                                    Text(stringResource(R.string.update_check))
+                                }
+                            }
+                            if (hasApk) {
+                                Spacer(Modifier.height(8.dp))
+                                Button(onClick = onInstall, modifier = Modifier.fillMaxWidth()) {
+                                    Text(stringResource(R.string.update_reinstall))
+                                }
                             }
                         }
-                        if (hasApk) {
-                            Spacer(Modifier.height(8.dp))
-                            Button(onClick = onInstall, modifier = Modifier.fillMaxWidth()) {
-                                Text(stringResource(R.string.update_reinstall))
-                            }
-                        }
-                    }
                     } else {
                         Button(
                             onClick = onCheck,

@@ -1,5 +1,7 @@
 package org.lsposed.lspatch.ui.page.manage
 
+import org.matrix.vector.ui.AppIcon
+import org.lsposed.lspatch.ui.component.rememberAppIcon
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -106,12 +108,14 @@ fun ModuleManageBody(query: String) {
                     versionName = item.second.versionName,
                     description = item.second.description,
                     icon = {
-                        Icon(
-                            bitmap = LSPPackageManager.getIcon(item.first),
-                            contentDescription = null,
-                            tint = Color.Unspecified,
-                            modifier = Modifier.fillMaxSize(),
-                        )
+                        rememberAppIcon(item.first)?.let { bitmap ->
+                                Icon(
+                                    bitmap = bitmap,
+                                    contentDescription = null,
+                                    tint = Color.Unspecified,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
                     },
                     apiBadge = { ApiBadge(label = "API", value = item.second.api.toString()) },
                     onClick = { sheetFor = item },
@@ -153,10 +157,10 @@ fun ModuleManageBody(query: String) {
                         label = appInfo.label,
                         packageName = packageName,
                         icon = {
-                            Icon(
-                                bitmap = LSPPackageManager.getIcon(appInfo),
+                            AppIcon(
+                                applicationInfo = appInfo.app,
                                 contentDescription = null,
-                                tint = Color.Unspecified,
+                                size = 24.dp,
                             )
                         },
                         extraContent = {

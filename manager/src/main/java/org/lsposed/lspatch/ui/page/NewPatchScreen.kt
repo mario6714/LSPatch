@@ -1,5 +1,8 @@
 package org.lsposed.lspatch.ui.page
 
+import org.lsposed.lspatch.ui.component.rememberAppIcon
+import org.matrix.vector.ui.show
+import org.matrix.vector.ui.SnackbarTone
 import android.content.Intent
 import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -85,6 +88,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -107,10 +112,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.ramcosta.composedestinations.annotation.Destination
-import com.ramcosta.composedestinations.navigation.DestinationsNavigator
-import com.ramcosta.composedestinations.result.NavResult
-import com.ramcosta.composedestinations.result.ResultRecipient
 import kotlinx.coroutines.launch
 import org.lsposed.lspatch.R
 import org.lsposed.lspatch.config.Configs
@@ -131,7 +132,8 @@ import org.lsposed.lspatch.ui.component.PatchLog
 import org.lsposed.lspatch.ui.component.PatchStepList
 import org.lsposed.lspatch.ui.component.rememberExportApk
 import org.lsposed.lspatch.ui.component.settings.KeystoreSetting
-import org.lsposed.lspatch.ui.page.destinations.SelectModulesScreenDestination
+import org.lsposed.lspatch.ui.navigation.ModuleSelection
+import org.lsposed.lspatch.ui.navigation.SelectModules
 import org.lsposed.lspatch.ui.util.LocalSnackbarHost
 import org.lsposed.lspatch.util.LSPPackageManager
 import org.lsposed.lspatch.util.ShizukuApi
@@ -140,6 +142,7 @@ import org.matrix.vector.ui.SharedAlertDialog
 import org.matrix.vector.ui.SheetAction
 import org.matrix.vector.ui.ToggleRow
 import org.matrix.vector.ui.copyToClipboard
+import org.matrix.vector.ui.navigation.Navigator
 
 /**
  * Configures one patch, then shows it happening.
@@ -152,14 +155,11 @@ import org.matrix.vector.ui.copyToClipboard
  * gesture outright.
  */
 @OptIn(ExperimentalMaterial3Api::class)
-@Destination
 @Composable
-fun NewPatchScreen(
-    navigator: DestinationsNavigator,
-    modulesRecipient: ResultRecipient<SelectModulesScreenDestination, SelectedModules>,
-    token: String,
-) {
-    val viewModel = viewModel<org.lsposed.lspatch.ui.viewmodel.NewPatchViewModel>()
+fun NewPatchScreen(navigator: Navigator, token: String) {
+    // Built with its token rather than reading one out of a SavedStateHandle: the back stack holds
+    // routes, not bundles, so the token is a value the screen already has.
+    val viewModel = viewModel { org.lsposed.lspatch.ui.viewmodel.NewPatchViewModel(token) }
     val step by PatchJobHost.step.collectAsStateWithLifecycle()
     val logLines by PatchJobHost.log.collectAsStateWithLifecycle()
     val request = viewModel.request
@@ -167,11 +167,9 @@ fun NewPatchScreen(
     val context = LocalContext.current
     val snackbarHost = LocalSnackbarHost.current
 
-    // Registered once, unconditionally. Registering from inside a branch means the recipient is
-    // absent on the composition the result actually arrives in, and the result is dropped.
-    modulesRecipient.onNavResult { result ->
-        if (result is NavResult.Value) viewModel.addInstalled(result.value.packageNames)
-    }
+    // What the module picker chose, applied once on the way back -- see ModuleSelection.
+    val selection by ModuleSelection.pending.collectAsState()
+    LaunchedEffect(selection) { ModuleSelection.consume(token)?.let { viewModel.addInstalled(it) } }
 
     var logExpanded by remember { mutableStateOf(false) }
     var logWrap by rememberSaveable { mutableStateOf(false) }
@@ -207,7 +205,7 @@ fun NewPatchScreen(
             DetailTopBar(
                 label = request.label,
                 packageName = request.packageName,
-                onBack = { navigator.navigateUp() },
+                onBack = { navigator.back() },
                 actions = {
                     if (lines.isNotEmpty()) {
                         IconButton(onClick = { logExpanded = !logExpanded }) {
@@ -256,7 +254,7 @@ fun NewPatchScreen(
                                     onClick = {
                                         logMenu = false
                                         copyToClipboard(context, PatchJobHost.report())
-                                        scope.launch { snackbarHost.showSnackbar(copied) }
+                                        scope.launch { snackbarHost.show(copied, SnackbarTone.Success) }
                                     },
                                 )
                                 DropdownMenuItem(
@@ -303,11 +301,11 @@ fun NewPatchScreen(
                         runCatching { context.startActivity(it) }
                     }
                     PatchJobHost.acknowledge()
-                    navigator.navigateUp()
+                    navigator.back()
                 },
                 onDone = {
                     PatchJobHost.acknowledge()
-                    navigator.navigateUp()
+                    navigator.back()
                 },
             )
         },
@@ -332,11 +330,7 @@ fun NewPatchScreen(
                         onSigBypass = viewModel::setSigBypassLevel,
                         onRemoveModule = viewModel::removeModule,
                         onAddInstalled = {
-                            navigator.navigate(
-                                SelectModulesScreenDestination(
-                                    initialSelected = viewModel.modules.mapTo(ArrayList()) { it.packageName }
-                                )
-                            )
+                            navigator.go(SelectModules(token, viewModel.modules.map { it.packageName }))
                         },
                         onAddFromStorage = { added -> viewModel.addModules(added) },
                         onLabel = viewModel::setLabelOverride,
@@ -407,7 +401,7 @@ private fun ConfigureBody(
                         LSPPackageManager.moduleBindingFromFile(java.io.File(it.app.sourceDir))
                     }
                     if (bindings.size < infos.size) {
-                        snackbarHost.showSnackbar(notAModule.format(infos.first().label))
+                        snackbarHost.show(notAModule.format(infos.first().label), SnackbarTone.Failure)
                     }
                     onAddFromStorage(bindings)
                 }
@@ -809,12 +803,11 @@ private fun advancedChips(request: PatchRequest): List<OptionChipData> = buildLi
 @Composable
 private fun TargetStrip(request: PatchRequest) {
     val context = LocalContext.current
-    val icon =
+    val target =
         remember(request.packageName) {
-            LSPPackageManager.appList
-                .firstOrNull { it.app.packageName == request.packageName }
-                ?.let { runCatching { LSPPackageManager.getIcon(it) }.getOrNull() }
+            LSPPackageManager.appList.firstOrNull { it.app.packageName == request.packageName }
         }
+    val icon = target?.let { rememberAppIcon(it) }
     val version =
         remember(request.packageName) {
             runCatching {
@@ -1342,7 +1335,7 @@ private fun PatchBar(
                                         // A refusal is reported where the press happened.
                                         val failure = LSPPackageManager.startHandoff(context, handoff)
                                         if (failure != null) {
-                                            scope.launch { snackbars.showSnackbar(failure) }
+                                            scope.launch { snackbars.show(failure, SnackbarTone.Failure) }
                                         }
                                     },
                                 ) {

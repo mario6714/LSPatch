@@ -1,5 +1,8 @@
 package org.lsposed.lspatch.ui.page.manage
 
+import org.lsposed.lspatch.ui.component.rememberAppIcon
+import org.matrix.vector.ui.show
+import org.matrix.vector.ui.SnackbarTone
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -46,7 +49,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import kotlinx.coroutines.launch
 import org.lsposed.lspatch.R
 import org.lsposed.lspatch.data.repository.PatchJobHost
@@ -54,8 +56,8 @@ import org.lsposed.lspatch.lspApp
 import org.lsposed.lspatch.share.Constants
 import org.lsposed.lspatch.share.LSPConfig
 import org.lsposed.lspatch.ui.component.PatchProgressLine
-import org.lsposed.lspatch.ui.page.destinations.AppDetailScreenDestination
-import org.lsposed.lspatch.ui.page.destinations.NewPatchScreenDestination
+import org.lsposed.lspatch.ui.navigation.AppDetail
+import org.lsposed.lspatch.ui.navigation.NewPatch
 import org.lsposed.lspatch.ui.page.startNewPatch
 import org.lsposed.lspatch.ui.util.LocalSnackbarHost
 import org.lsposed.lspatch.ui.viewmodel.manage.AppManageViewModel
@@ -65,6 +67,7 @@ import org.lsposed.lspatch.util.ShizukuApi
 import org.matrix.vector.ui.ModuleRow
 import org.matrix.vector.ui.PanelEmptyState
 import org.matrix.vector.ui.REACH_ICON_SIZE
+import org.matrix.vector.ui.navigation.Navigator
 
 /**
  * A quiet tinted pill for a fact the row carries on its bottom band, such as the patch mode or the loader version.
@@ -92,7 +95,7 @@ private fun RowPill(text: String, color: Color) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppManageBody(navigator: DestinationsNavigator, query: String) {
+fun AppManageBody(navigator: Navigator, query: String) {
     val viewModel = viewModel<AppManageViewModel>()
     val snackbarHost = LocalSnackbarHost.current
     val scope = rememberCoroutineScope()
@@ -122,7 +125,7 @@ fun AppManageBody(navigator: DestinationsNavigator, query: String) {
                     )
                 if (result == SnackbarResult.ActionPerformed && target != null) {
                     ShizukuApi.runShellCommand("am force-stop $target")
-                    snackbarHost.showSnackbar(stopped)
+                    snackbarHost.show(stopped, SnackbarTone.Success)
                 }
                 viewModel.dispatch(AppManageViewModel.ViewAction.ClearOptimizeResult)
             }
@@ -136,8 +139,7 @@ fun AppManageBody(navigator: DestinationsNavigator, query: String) {
             step = step,
             onClick = {
                 val active = PatchJobHost.active.value
-                if (active != null) navigator.navigate(NewPatchScreenDestination(token = active.token))
-                else PatchJobHost.acknowledge()
+                if (active != null) navigator.go(NewPatch(token = active.token)) else PatchJobHost.acknowledge()
             },
         )
 
@@ -199,12 +201,14 @@ fun AppManageBody(navigator: DestinationsNavigator, query: String) {
                         versionName = appVersion,
                         description = "",
                         icon = {
-                            Icon(
-                                bitmap = LSPPackageManager.getIcon(appInfo),
-                                contentDescription = null,
-                                tint = Color.Unspecified,
-                                modifier = Modifier.fillMaxSize(),
-                            )
+                            rememberAppIcon(appInfo)?.let { bitmap ->
+                                    Icon(
+                                        bitmap = bitmap,
+                                        contentDescription = null,
+                                        tint = Color.Unspecified,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
                         },
                         // No badge under the icon: the only number an app row has to show is its
                         // loader version, and that belongs beside the mode it depends on rather than
@@ -216,10 +220,10 @@ fun AppManageBody(navigator: DestinationsNavigator, query: String) {
                         // selection handle everywhere else, and a second gesture on it would not be
                         // discoverable.
                         onClick = {
-                            navigator.navigate(AppDetailScreenDestination(packageName = appInfo.app.packageName))
+                            navigator.go(AppDetail(packageName = appInfo.app.packageName))
                         },
                         onIconClick = {
-                            navigator.navigate(AppDetailScreenDestination(packageName = appInfo.app.packageName))
+                            navigator.go(AppDetail(packageName = appInfo.app.packageName))
                         },
                         onLongClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -306,7 +310,7 @@ fun AppManageBody(navigator: DestinationsNavigator, query: String) {
  * write and failed every time.
  */
 @Composable
-fun AppManageFab(navigator: DestinationsNavigator) {
+fun AppManageFab(navigator: Navigator) {
     FloatingActionButton(onClick = { startNewPatch(navigator) }) {
         Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.add))
     }

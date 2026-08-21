@@ -1,5 +1,7 @@
 package org.lsposed.lspatch.ui.component
 
+import org.matrix.vector.ui.show
+import org.matrix.vector.ui.SnackbarTone
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -56,7 +58,10 @@ fun rememberExportApk(): ExportApkLauncher {
         pending = emptyList()
         if (uri == null || files.isEmpty()) return@rememberLauncherForActivityResult
         scope.launch {
-            snackbarHost.showSnackbar(running)
+            // Shown from a coroutine of its own, because showing a message suspends until it is
+            // dismissed: awaited here, the copy would not begin until the message saying it had
+            // begun was already gone.
+            launch { snackbarHost.show(running, SnackbarTone.Working) }
             val ok = withContext(Dispatchers.IO) {
                 runCatching {
                     context.contentResolver.openOutputStream(uri)?.use { output ->
@@ -74,7 +79,10 @@ fun rememberExportApk(): ExportApkLauncher {
                     } ?: throw java.io.IOException("Cannot write to the chosen location")
                 }.isSuccess
             }
-            snackbarHost.showSnackbar(if (ok) done else failed)
+            snackbarHost.show(
+                if (ok) done else failed,
+                if (ok) SnackbarTone.Success else SnackbarTone.Failure,
+            )
         }
     }
 

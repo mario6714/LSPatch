@@ -3,11 +3,10 @@ package org.lsposed.lspatch.ui.page
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
-import com.ramcosta.composedestinations.annotation.Destination
-import com.ramcosta.composedestinations.navigation.DestinationsNavigator
 import org.lsposed.lspatch.data.repository.LSPLogSource
-import org.lsposed.lspatch.ui.page.destinations.LogTraceScreenDestination
+import org.lsposed.lspatch.ui.navigation.LogTrace
 import org.matrix.vector.ui.logs.LogsScreen as SharedLogsScreen
+import org.matrix.vector.ui.navigation.Navigator
 
 /**
  * The Logs page. A thin host over the shared `org.matrix.vector.ui.logs.LogsScreen`.
@@ -22,13 +21,12 @@ import org.matrix.vector.ui.logs.LogsScreen as SharedLogsScreen
  * the search and jump-to-newest — driven by the snapshot the source reads. A trace opens in place or, when the reader
  * turns that setting off, on the shared trace screen this navigates to.
  */
-@Destination
 @Composable
-fun LogsScreen(navigator: DestinationsNavigator) {
+fun LogsScreen(navigator: Navigator) {
     val context = LocalContext.current
     val source = remember { LSPLogSource(context.applicationContext) }
     SharedLogsScreen(
         source = source,
-        onOpenTrace = { text -> navigator.navigate(LogTraceScreenDestination(text = text)) },
+        onOpenTrace = { text -> navigator.go(LogTrace(text = text)) },
     )
 }

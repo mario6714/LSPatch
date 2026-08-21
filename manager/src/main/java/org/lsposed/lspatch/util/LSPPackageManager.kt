@@ -42,13 +42,13 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.parcelize.Parcelize
-import me.zhanghai.android.appiconloader.AppIconLoader
 import org.lsposed.lspatch.config.ConfigManager
 import org.lsposed.lspatch.config.Configs
 import org.lsposed.lspatch.config.MyKeyStore
 import org.lsposed.lspatch.data.model.ModuleBinding
 import org.lsposed.lspatch.data.model.ModuleOrigin
 import org.lsposed.lspatch.lspApp
+import org.matrix.vector.ui.AppIconCache
 import org.lsposed.lspatch.share.Constants
 import org.matrix.vector.ui.module.ModuleDetection
 
@@ -118,15 +118,19 @@ object LSPPackageManager {
     var appList by mutableStateOf(listOf<AppInfo>())
         private set
 
-    @SuppressLint("StaticFieldLeak")
-    private val iconLoader =
-        AppIconLoader(lspApp.resources.getDimensionPixelSize(android.R.dimen.app_icon_size), false, lspApp)
-    private val appIcon = mutableMapOf<String, ImageBitmap>()
+    /**
+     * The size icons are rasterised at, once.
+     *
+     * The launcher's own icon dimension: large enough for every row that draws one and small enough
+     * that the shared cache holds a few hundred of them.
+     */
+    private val iconSizePx by lazy {
+        lspApp.resources.getDimensionPixelSize(android.R.dimen.app_icon_size)
+    }
 
     // One scan at a time. Two callers overlapping -- the manager's own start-up scan and the log
-    // collector waiting for the uid set -- both walk every installed package writing [appIcon], which
-    // is a plain map: a resize under a concurrent write can lose an entry, and the loss surfaces
-    // later as the non-null read in getIcon.
+    // collector waiting for the uid set -- both walk every installed package, and doing it twice at
+    // the busiest moment there is costs a second full enumeration for nothing.
     private val scanning = Mutex()
 
     /**
@@ -152,7 +156,6 @@ object LSPPackageManager {
             pm.getInstalledApplications(PackageManager.GET_META_DATA).forEach {
                 val label = pm.getApplicationLabel(it)
                 collection.add(AppInfo(it, label.toString(), isModuleApk(it)))
-                appIcon[it.packageName] = iconLoader.loadIcon(it).asImageBitmap()
             }
             collection.sortWith(compareBy(Collator.getInstance(Locale.getDefault()), AppInfo::label))
             val modules = buildMap {
@@ -163,7 +166,22 @@ object LSPPackageManager {
         }
     }
 
-    fun getIcon(appInfo: AppInfo) = appIcon[appInfo.app.packageName]!!
+    /**
+     * This app's icon, if it has been rasterised already; null while it has not.
+     *
+     * Icons are no longer decoded for every installed package during the scan: that walked hundreds
+     * of drawables at the one moment the manager is busiest and held every one of them for the life
+     * of the process. They are rasterised on demand into the shared [AppIconCache], which is bounded
+     * -- so this answers null for one that has not been asked for yet, or was evicted. A caller that
+     * draws a single icon should use the shared `AppIcon` composable, which loads it and redraws;
+     * this is for the callers that need the bitmap itself.
+     */
+    fun cachedIcon(appInfo: AppInfo): ImageBitmap? =
+        AppIconCache.cached(AppIconCache.keyFor(appInfo.app, iconSizePx))
+
+    /** Rasterises this app's icon, or returns the cached one. */
+    suspend fun loadIcon(appInfo: AppInfo): ImageBitmap? =
+        AppIconCache.load(appInfo.app, lspApp.packageManager, iconSizePx)
 
     // Module icons for a patched app, keyed by the patched app's package so re-scrolling the list
     // does not re-open the apk or re-extract embedded modules. A Local patch draws on the manager's
@@ -191,12 +209,11 @@ object LSPPackageManager {
                     ConfigManager.getModulesForApp(pkg).mapNotNull { module ->
                         // Prefer the already-loaded installed icon; fall back to loading it on demand
                         // for a module that installed after the app list was last fetched.
-                        appIcon[module.pkgName]
-                            ?: runCatching {
+                        runCatching {
                                 val info = lspApp.packageManager.getApplicationInfo(module.pkgName, 0)
-                                iconLoader.loadIcon(info).asImageBitmap()
+                                AppIconCache.load(info, lspApp.packageManager, iconSizePx)
                             }
-                                .getOrNull()
+                            .getOrNull()
                     }
                 }
             } else {
@@ -341,7 +358,7 @@ object LSPPackageManager {
                         versionName = pkgInfo?.versionName,
                         versionCode = pkgInfo?.longVersionCode ?: 0L,
                         manifest = manifest,
-                        icon = appIcon[info.app.packageName],
+                        icon = AppIconCache.loadBlocking(info.app, pm, iconSizePx),
                         apkPath = info.app.sourceDir,
                         origin = ModuleOrigin.Installed,
                     )
@@ -375,7 +392,7 @@ object LSPPackageManager {
             versionName = pkgInfo.versionName,
             versionCode = pkgInfo.longVersionCode,
             manifest = runCatching { ModuleDetection.inspect(info, pm) }.getOrNull(),
-            icon = runCatching { iconLoader.loadIcon(info).asImageBitmap() }.getOrNull(),
+            icon = runCatching { AppIconCache.loadBlocking(info, pm, iconSizePx) }.getOrNull(),
             apkPath = apk.absolutePath,
             origin = origin,
         )
