@@ -56,6 +56,21 @@
             android:name=".manager.ModuleService"
             android:exported="true" />
 
+        <!-- On-demand service delivery: a module's own app binds this (resolving it by the
+             REQUEST_PUSH action, not by this manager's package, so a cloaked manager is still found)
+             to ask the manager to push its writable service the moment its settings UI opens, instead
+             of waiting for one of the usual push triggers. The push travels the ordinary SEND_BINDER
+             path into the module's own unmodified libxposed provider, so nothing in the module or in
+             upstream libxposed changes. Exported for the same reason ModuleService is; the manager
+             pushes only to the caller's own package, authenticated by the calling uid. -->
+        <service
+            android:name=".manager.XposedPullService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="org.lsposed.lspatch.action.REQUEST_PUSH" />
+            </intent-filter>
+        </service>
+
         <!-- Exported so the Shizuku shell can start it: that watchdog runs as the shell user, which is
              the whole reason it survives what stops this app, and the shell may only start a component
              that says it may. It grants nothing new — any app can already cause this manager to run by

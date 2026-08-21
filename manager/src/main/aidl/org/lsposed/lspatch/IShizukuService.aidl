@@ -1,5 +1,7 @@
 package org.lsposed.lspatch;
 
+import org.lsposed.lspatch.IShizukuProcessCallback;
+
 interface IShizukuService {
     // Executes a single program (no shell: no pipes, globs or redirects) and returns its output.
     String runShellCommand(String cmd) = 1;
@@ -85,4 +87,22 @@ interface IShizukuService {
 
     // Whether a supervisor is currently running.
     boolean isManagerWatchdogRunning() = 16;
+
+    // --- On-demand service delivery. This process runs as the shell user and can see every process
+    // start on the device, which the manager (a plain app in the background) cannot. It watches the
+    // companion packages the manager names and reports each start back, so the manager can push that
+    // companion its writable IXposedService the moment its settings UI opens -- the trigger a rootless
+    // manager otherwise lacks. Appended with fresh ids; existing ids are never renumbered. ---
+
+    // Starts (or re-targets) a watcher over [companionPackages], reporting each not-running -> running
+    // edge through [callback], plus one immediate report for any already running. Replaces any watcher
+    // already running. A no-op set stops the watcher.
+    void registerCompanionObserver(IShizukuProcessCallback callback, in String[] companionPackages) = 17;
+
+    // Replaces the watched set without dropping the callback -- a module installed after the watcher
+    // started joins in place. Does nothing when no watcher is running.
+    void updateCompanionPackages(in String[] companionPackages) = 18;
+
+    // Stops the watcher, if any.
+    void unregisterCompanionObserver() = 19;
 }

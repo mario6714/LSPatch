@@ -2,6 +2,7 @@ package org.lsposed.lspatch.manager
 
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import io.github.libxposed.service.IXposedService
 import java.util.concurrent.ConcurrentHashMap
@@ -46,8 +47,24 @@ object ManagerRemoteServices {
     private val hotReloadDriver = ManagerHotReloadDriver()
 
     // Off the binder thread: a push opens (and can start) the companion's provider process, so it must
-    // not block the getModules() reply the host is waiting on.
+    // not block the getModules() reply the host is waiting on. This one carries only the trusted
+    // internal triggers (getModules, config change, app change).
     private val pushExecutor = Executors.newSingleThreadExecutor { Thread(it, "lspatch-companion-push") }
+
+    // On-demand pushes (the Shizuku companion watcher) ride their own thread, so a companion whose
+    // provider hangs a push cannot stall the trusted getModules path above.
+    private val onDemandExecutor = Executors.newSingleThreadExecutor { Thread(it, "lspatch-push-ondemand") }
+
+    // Untrusted pushes (the exported requestPush any app may call) are isolated further still: a small
+    // pool, so one caller's deliberately-hung provider cannot starve another caller's request, and
+    // never the trusted or on-demand paths. Rate-limiting per uid lives in XposedPullService.
+    private val untrustedExecutor = Executors.newFixedThreadPool(2) { Thread(it, "lspatch-push-untrusted") }
+
+    // The last time a push to a package actually landed, so two pushes racing the same process start
+    // (the watcher's edge and an opt-in requestPush, or a retry after a real failure) collapse to one
+    // SEND_BINDER -- the stock XposedServiceHelper has no dedup and would otherwise fire onServiceBind
+    // twice. Keyed on success only, so a retry after a failed push is never coalesced away.
+    private val lastSuccessfulPush = ConcurrentHashMap<String, Long>()
 
     private val frameworkInfo by lazy {
         FrameworkInfo(
@@ -83,14 +100,18 @@ object ManagerRemoteServices {
      * companion (no such authority), which is the common case and not worth logging loudly.
      */
     fun pushToCompanion(pkg: String): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        lastSuccessfulPush[pkg]?.let { if (now - it < PUSH_COALESCE_MS) return true }
         val uri = Uri.parse("content://$pkg${IXposedService.AUTHORITY_SUFFIX}")
-        return runCatching {
+        val ok = runCatching {
             val extras = Bundle().apply { putBinder("binder", xposedService(pkg).asBinder()) }
             lspApp.contentResolver.call(uri, IXposedService.SEND_BINDER, null, extras) != null
         }.getOrElse {
             Log.d(TAG, "No companion to receive the service for $pkg: ${it.message}")
             false
         }
+        if (ok) lastSuccessfulPush[pkg] = SystemClock.elapsedRealtime()
+        return ok
     }
 
     /** Best-effort push to each named module's companion, off the caller's thread. */
@@ -99,4 +120,34 @@ object ManagerRemoteServices {
         val snapshot = pkgs.toList()
         pushExecutor.execute { snapshot.forEach { pushToCompanion(it) } }
     }
+
+    /**
+     * A push triggered by the Shizuku companion watcher spotting the settings app start. Isolated from
+     * the trusted trigger path, and retried once after a short delay: the watcher fires the instant the
+     * process appears in `ps`, which can be a hair before the companion's provider is published, and a
+     * single failed [pushToCompanion] would otherwise strand the companion for its whole process life.
+     * The retry runs only after a real failure -- a success sets the coalesce stamp and returns early.
+     */
+    fun pushToCompanionOnDemand(pkg: String) {
+        onDemandExecutor.execute { pushWithOneRetry(pkg) }
+    }
+
+    /** A push asked for by the exported requestPush endpoint. Same retry, on the isolated pool. */
+    fun pushToCompanionUntrusted(pkg: String) {
+        untrustedExecutor.execute { pushWithOneRetry(pkg) }
+    }
+
+    private fun pushWithOneRetry(pkg: String) {
+        if (pushToCompanion(pkg)) return
+        try {
+            Thread.sleep(ON_DEMAND_RETRY_MS)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return
+        }
+        pushToCompanion(pkg)
+    }
+
+    private const val PUSH_COALESCE_MS = 3_000L
+    private const val ON_DEMAND_RETRY_MS = 600L
 }

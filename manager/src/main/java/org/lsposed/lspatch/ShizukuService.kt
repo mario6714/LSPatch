@@ -403,7 +403,121 @@ class ShizukuService : IShizukuService.Stub() {
         Log.i(TAG, "Shell service destroyed")
         stopLogCollector()
         stopManagerWatchdog()
+        unregisterCompanionObserver()
         exitProcess(0)
+    }
+
+    // --- On-demand service delivery: watching companion (module) app starts for the manager ---
+
+    private val companionLock = Any()
+
+    @Volatile private var companionWatcher: Thread? = null
+
+    /** The last (client, package-set) the watcher was armed with, so repeated same-state arms no-op. */
+    @Volatile private var companionWatching: String? = null
+
+    @Volatile private var companionCallback: IShizukuProcessCallback? = null
+
+    @Volatile private var companionPackages: Array<String> = emptyArray()
+
+    override fun registerCompanionObserver(
+        callback: IShizukuProcessCallback,
+        companionPackages: Array<String>,
+    ) {
+        synchronized(companionLock) {
+            if (companionPackages.isEmpty()) {
+                // The AIDL contract: a no-op set stops the watcher, rather than leaving an idle thread
+                // running `ps` forever with nothing to match.
+                stopCompanionObserverLocked()
+                return
+            }
+            val key = companionPackages.toSortedSet().joinToString(",")
+            val sameClient = companionCallback?.asBinder() == callback.asBinder()
+            if (sameClient && companionWatcher?.isAlive == true) {
+                // Same manager, thread alive: retarget in place. Keeps the "already reported" memory,
+                // so a 15-second re-arm from the resident tick does not re-push running companions.
+                this.companionPackages = companionPackages
+                companionWatching = key
+                return
+            }
+            // A new manager instance (or a dead thread): start fresh, so this manager learns the
+            // current state -- a companion already open is reported once to it.
+            stopCompanionObserverLocked()
+            this.companionCallback = callback
+            this.companionPackages = companionPackages
+            companionWatching = key
+            Log.i(TAG, "Watching ${companionPackages.size} companion package(s) for starts")
+            val thread = Thread {
+                val known = HashSet<String>()
+                while (!Thread.currentThread().isInterrupted) {
+                    try {
+                        Thread.sleep(COMPANION_POLL_MS)
+                    } catch (e: InterruptedException) {
+                        return@Thread
+                    }
+                    val running = runningProcessNames() ?: continue
+                    val watched = this.companionPackages
+                    val cb = this.companionCallback ?: continue
+                    for (pkg in watched) {
+                        if (pkg in running) {
+                            if (known.add(pkg)) {
+                                // Fired on the rising edge (and once at arm time, since `known` starts
+                                // empty). oneway, so a dead manager just throws here and is ignored.
+                                runCatching { cb.onCompanionStarted(pkg) }
+                                    .onFailure { Log.w(TAG, "onCompanionStarted($pkg)", it) }
+                            }
+                        } else {
+                            known.remove(pkg)
+                        }
+                    }
+                    known.retainAll(watched.toHashSet())
+                }
+            }
+            thread.isDaemon = true
+            thread.name = "lspatch-companion-watch"
+            companionWatcher = thread
+            thread.start()
+        }
+    }
+
+    override fun updateCompanionPackages(companionPackages: Array<String>) {
+        synchronized(companionLock) {
+            if (companionWatcher?.isAlive != true) return
+            this.companionPackages = companionPackages
+            companionWatching = companionPackages.toSortedSet().joinToString(",")
+        }
+    }
+
+    override fun unregisterCompanionObserver() {
+        synchronized(companionLock) { stopCompanionObserverLocked() }
+    }
+
+    private fun stopCompanionObserverLocked() {
+        companionWatcher?.let {
+            Log.i(TAG, "Stopping the companion watcher")
+            it.interrupt()
+            // Briefly wait it out so an outgoing thread cannot fire one more start through the callback
+            // of the manager instance that is replacing it. It sleeps most of the time, so the
+            // interrupt returns it at once; the bound is only a backstop.
+            runCatching { it.join(STOP_JOIN_MS) }
+        }
+        companionWatcher = null
+        companionWatching = null
+        companionCallback = null
+        companionPackages = emptyArray()
+    }
+
+    /**
+     * The base package of every process running now, or null when the read failed (skip the tick, no
+     * edge). A settings UI declared under `android:process=":x"` runs as `pkg:x`, so the `:suffix` is
+     * stripped: the watcher matches a module by its package whichever process its UI runs in.
+     */
+    private fun runningProcessNames(): Set<String>? = runCatching {
+        Runtime.getRuntime().exec(arrayOf("sh", "-c", "ps -A -o NAME")).inputStream.bufferedReader()
+            .useLines { lines -> lines.mapTo(HashSet()) { it.trim().substringBefore(':') } }
+    }.getOrElse {
+        Log.w(TAG, "Cannot list running processes", it)
+        null
     }
 
     // --- Keeping the manager reachable ---
@@ -601,6 +715,13 @@ class ShizukuService : IShizukuService.Stub() {
 
         /** Consecutive restarts that changed nothing before the watchdog concludes it cannot help. */
         const val MAX_WATCHDOG_FAILURES = 5
+
+        /** How often the companion watcher lists processes. A few seconds is imperceptible against a
+         *  person opening a settings screen and then changing a value, and one `ps` is cheap. */
+        const val COMPANION_POLL_MS = 2500L
+
+        /** Backstop wait for an interrupted watcher thread to exit before a fresh one replaces it. */
+        const val STOP_JOIN_MS = 300L
 
         /** ~4 MB per part, eight parts per stream — ~32 MB of history apiece at most. */
         const val MAX_PART_BYTES = 4L * 1024 * 1024

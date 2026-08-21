@@ -24,7 +24,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.shizuku.server.IShizukuService as IShizukuServer
+import org.lsposed.lspatch.IShizukuProcessCallback
 import org.lsposed.lspatch.IShizukuService
+import org.lsposed.lspatch.manager.ManagerRemoteServices
 import org.lsposed.lspatch.R
 import org.lsposed.lspatch.ShizukuService
 import org.lsposed.lspatch.config.Configs
@@ -799,6 +801,28 @@ object ShizukuApi {
 
     /** Rolls both streams to a fresh part without stopping collection or deleting anything. */
     suspend fun startNewLogPart(): Boolean = onService(ShizukuOp.Logs, false) { it.startNewLogPart() }
+
+    // --- On-demand service delivery: the shell watches companion (module) app starts, since the
+    // manager cannot see them from the background, and reports each so the manager pushes the
+    // companion its writable service the moment its settings UI opens. ---
+
+    /**
+     * Where a companion start becomes a push. One stub for the life of the manager process, so a
+     * re-arm from the resident tick reaches the shell with the same binder and is recognised as the
+     * same client (no watcher restart, no re-report of already-running companions).
+     */
+    private val companionCallback = object : IShizukuProcessCallback.Stub() {
+        override fun onCompanionStarted(packageName: String) {
+            ManagerRemoteServices.pushToCompanionOnDemand(packageName)
+        }
+    }
+
+    /** Arms (or re-targets) the shell-side companion watcher. Idempotent per the tick that calls it. */
+    suspend fun registerCompanionObserver(companionPackages: Array<String>) {
+        onService(ShizukuOp.Shell, Unit, surface = false) {
+            it.registerCompanionObserver(companionCallback, companionPackages)
+        }
+    }
 
     suspend fun isLogCollectorRunning(): Boolean = onService(ShizukuOp.Logs, false) { it.isLogCollectorRunning() }
 

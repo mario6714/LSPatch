@@ -115,6 +115,11 @@ class ManagerResidentService : Service() {
                         ShizukuApi.startLogCollector(LOG_DIR, uids)
                     }
                     armWatchdog()
+                    // Arm the companion watcher so a module's settings UI, opened on its own, is
+                    // pushed its service the moment it starts -- the on-demand delivery a rootless
+                    // manager otherwise cannot trigger. Idempotent, re-stated each tick like the uid
+                    // set above, so a module installed later joins in place.
+                    ShizukuApi.registerCompanionObserver(companionPackages())
                 }
                 val nowCollecting = shizuku && ShizukuApi.isLogCollectorRunning()
                 if (nowCollecting != collecting) {
@@ -233,6 +238,18 @@ class ManagerResidentService : Service() {
                 .forEach { if (it.app.uid != own) others.add(it.app.uid) }
             return intArrayOf(own) + others.toIntArray()
         }
+
+        /**
+         * The module apps whose starts the shell watches -- a module's own app is its companion, the
+         * one that writes the preferences a hook reads. Matched by process name (which equals the
+         * package for an app's main process), so the watcher reports the settings UI opening.
+         */
+        fun companionPackages(): Array<String> =
+            LSPPackageManager.appList
+                .filter { it.isModule }
+                .map { it.app.packageName }
+                .distinct()
+                .toTypedArray()
 
         private const val TAG = "LSPatch-Resident"
 
