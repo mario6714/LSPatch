@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -156,12 +157,24 @@ class ManagerResidentService : Service() {
      */
     private suspend fun armWatchdog() {
         if (Configs.keepManagerAlive) {
-            ShizukuApi.startManagerWatchdog(packageName, WATCHDOG_COMPONENT, WATCHDOG_INTERVAL_S)
+            ShizukuApi.startManagerWatchdog(packageName, watchdogComponent(), WATCHDOG_INTERVAL_S)
         } else if (!watchdogReconciled || ShizukuApi.shellIsDaemon) {
             ShizukuApi.stopManagerWatchdog()
         }
         watchdogReconciled = true
     }
+
+    /**
+     * The `package/class` string the shell watchdog restarts, resolved from this running app rather than hardcoded.
+     *
+     * A cloaked manager runs under a randomized package while its classes keep their compiled name (aapt froze the
+     * component to the fully-qualified [ManagerResidentService] at build time, and the cloak rewrites only the manifest
+     * package attribute). A literal `org.lsposed.lspatch/...` therefore named a package that is not this one, so on a
+     * cloaked build keep-alive armed a watchdog that could never bring the manager back. [ComponentName] pairs the live
+     * package with that frozen class name, which is exactly what `am start-foreground-service -n` wants.
+     */
+    private fun watchdogComponent(): String =
+        ComponentName(this, ManagerResidentService::class.java).flattenToString()
 
     override fun onDestroy() {
         scope.cancel()
@@ -217,9 +230,6 @@ class ManagerResidentService : Service() {
     companion object {
         /** Shell-owned; the app reads parts back through Shizuku, never directly (cross-UID). */
         const val LOG_DIR = "/data/local/tmp/lspatch-logs"
-
-        /** What the shell-side watchdog starts to bring the manager back -- this service itself. */
-        private const val WATCHDOG_COMPONENT = "org.lsposed.lspatch/.service.ManagerResidentService"
 
         private const val WATCHDOG_INTERVAL_S = 120
 
