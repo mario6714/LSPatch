@@ -200,30 +200,48 @@ void scanAppLibs() {
 }
 
 // The packer library is dlopen'd long after level 3 is armed (it is decrypted at app start), so a
-// one-shot scan would miss it. Re-scan after every load. These hook the public libdl entry points,
-// distinct from the framework's internal do_dlopen hook, so the two do not collide.
-void *(*g_orig_android_dlopen_ext)(const char *, int, const void *) = nullptr;
-void *my_android_dlopen_ext(const char *filename, int flags, const void *extinfo) {
-    void *h = g_orig_android_dlopen_ext(filename, flags, extinfo);
+// one-shot scan would miss it. Re-scan after every load.
+//
+// We hook the linker's INTERNAL loader entry points -- __loader_dlopen and
+// __loader_android_dlopen_ext -- not the public libdl wrappers. bionic's public dlopen /
+// android_dlopen_ext are thin thunks that capture their caller with __builtin_return_address(0) and
+// pass it down so the linker can derive the caller's namespace. Hooking the public wrapper makes the
+// relocated original observe this handler's return address instead of the real caller's, so loads
+// resolve in the default namespace and any namespace-scoped load -- one whose target is visible only
+// in the caller's own namespace -- fails. The internal functions take caller_addr as an explicit
+// argument, so forwarding it unchanged leaves namespace derivation intact. A different function from
+// the framework's internal do_dlopen hook, so the two still do not collide.
+void *(*g_orig_loader_android_dlopen_ext)(const char *, int, const void *, const void *) = nullptr;
+void *my_loader_android_dlopen_ext(const char *filename, int flags, const void *extinfo,
+                                   const void *caller_addr) {
+    void *h = g_orig_loader_android_dlopen_ext(filename, flags, extinfo, caller_addr);
     if (h != nullptr) scanAppLibs();
     return h;
 }
 
-void *(*g_orig_dlopen)(const char *, int) = nullptr;
-void *my_dlopen(const char *filename, int flags) {
-    void *h = g_orig_dlopen(filename, flags);
+void *(*g_orig_loader_dlopen)(const char *, int, const void *) = nullptr;
+void *my_loader_dlopen(const char *filename, int flags, const void *caller_addr) {
+    void *h = g_orig_loader_dlopen(filename, flags, caller_addr);
     if (h != nullptr) scanAppLibs();
     return h;
 }
 
 void hookDlopen() {
-    if (void *ext = dlsym(RTLD_DEFAULT, "android_dlopen_ext")) {
-        DobbyHook(ext, reinterpret_cast<dobby_dummy_func_t>(my_android_dlopen_ext),
-                  reinterpret_cast<dobby_dummy_func_t *>(&g_orig_android_dlopen_ext));
+    // __loader_* are exported by the linker, not by libdl, so they are resolved from the linker image
+    // rather than through dlsym. A resolution miss disables only the rescan for that entry (level 3
+    // loses some packer coverage), never the namespace-safe load itself.
+    ElfImage linker("linker64");
+    if (auto ext = linker.getSymbAddress<void *>("__loader_android_dlopen_ext")) {
+        DobbyHook(ext, reinterpret_cast<dobby_dummy_func_t>(my_loader_android_dlopen_ext),
+                  reinterpret_cast<dobby_dummy_func_t *>(&g_orig_loader_android_dlopen_ext));
+    } else {
+        LOGW("could not resolve __loader_android_dlopen_ext; dlopen rescan skipped for it");
     }
-    if (void *plain = dlsym(RTLD_DEFAULT, "dlopen")) {
-        DobbyHook(plain, reinterpret_cast<dobby_dummy_func_t>(my_dlopen),
-                  reinterpret_cast<dobby_dummy_func_t *>(&g_orig_dlopen));
+    if (auto plain = linker.getSymbAddress<void *>("__loader_dlopen")) {
+        DobbyHook(plain, reinterpret_cast<dobby_dummy_func_t>(my_loader_dlopen),
+                  reinterpret_cast<dobby_dummy_func_t *>(&g_orig_loader_dlopen));
+    } else {
+        LOGW("could not resolve __loader_dlopen; dlopen rescan skipped for it");
     }
 }
 
