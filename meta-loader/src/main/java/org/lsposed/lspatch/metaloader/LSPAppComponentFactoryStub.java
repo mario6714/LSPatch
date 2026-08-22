@@ -82,14 +82,38 @@ public class LSPAppComponentFactoryStub extends AppComponentFactory {
             }
 
             if (useManager) {
-                Log.i(TAG, "Bootstrap loader from manager: " + managerPackageName);
                 var ipm = IPackageManager.Stub.asInterface(ServiceManager.getService("package"));
-                ApplicationInfo manager;
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    manager = (ApplicationInfo) HiddenApiBypass.invoke(IPackageManager.class, ipm, "getApplicationInfo", managerPackageName, 0L, Process.myUid() / 100000);
-                } else {
-                    manager = ipm.getApplicationInfo(managerPackageName, 0, Process.myUid() / 100000);
+                int userId = Process.myUid() / 100000;
+                // Resolve the manager the loader lives in, tolerant of a renamed (cloaked) or
+                // reverted manager. A manager-mode app binds its manager by package name baked in at
+                // patch time; when that package no longer resolves -- the manager was cloaked to a
+                // random id, or a cloak was reverted and its temporary id uninstalled -- looking only
+                // at the recorded name read null and the app crashed on every start reading a null
+                // sourceDir. So the recorded name is tried first, then the stock package, and a
+                // candidate is accepted only once its apk is confirmed to actually carry the loader.
+                ApplicationInfo manager = null;
+                String chosen = null;
+                for (var candidate : managerCandidates(managerPackageName)) {
+                    var info = getApplicationInfoOrNull(ipm, candidate, userId);
+                    if (info == null || info.sourceDir == null) {
+                        Log.w(TAG, "Manager candidate not installed: " + candidate);
+                        continue;
+                    }
+                    if (!carriesLoader(info.sourceDir)) {
+                        Log.w(TAG, "Manager candidate carries no loader: " + candidate);
+                        continue;
+                    }
+                    manager = info;
+                    chosen = candidate;
+                    break;
                 }
+                if (manager == null) {
+                    throw new IllegalStateException(
+                            "No installed LSPatch manager carries the loader (tried "
+                                    + String.join(", ", managerCandidates(managerPackageName))
+                                    + "); re-patch this app or reinstall the manager");
+                }
+                Log.i(TAG, "Bootstrap loader from manager: " + chosen);
                 try (var zip = new ZipFile(new File(manager.sourceDir));
                      var is = zip.getInputStream(zip.getEntry(Constants.LOADER_DEX_ASSET_PATH));
                      var os = new ByteArrayOutputStream()) {
@@ -113,6 +137,43 @@ public class LSPAppComponentFactoryStub extends AppComponentFactory {
             System.load(soPath);
         } catch (Throwable e) {
             throw new ExceptionInInitializerError(e);
+        }
+    }
+
+    /**
+     * The manager packages to try, in order: the one this app was patched against, then the stock id.
+     *
+     * The stock fallback is what lets a manager-mode app survive a manager rename it was not retargeted
+     * for -- a cloak whose re-patch of this app failed, or a revert back to stock after this app had
+     * been pointed at the (now uninstalled) cloaked id. The recorded name is still tried first, so a
+     * correctly retargeted app keeps loading from the manager it was told about.
+     */
+    private static String[] managerCandidates(String recorded) {
+        if (recorded == null || recorded.isEmpty() || recorded.equals(Constants.MANAGER_PACKAGE_NAME)) {
+            return new String[]{Constants.MANAGER_PACKAGE_NAME};
+        }
+        return new String[]{recorded, Constants.MANAGER_PACKAGE_NAME};
+    }
+
+    private static ApplicationInfo getApplicationInfoOrNull(IPackageManager ipm, String packageName, int userId) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                return (ApplicationInfo) HiddenApiBypass.invoke(IPackageManager.class, ipm, "getApplicationInfo", packageName, 0L, userId);
+            }
+            return ipm.getApplicationInfo(packageName, 0, userId);
+        } catch (Throwable t) {
+            // A package that is not installed for this user answers with null or throws depending on
+            // the platform; either way it is simply not a manager this app can load from.
+            return null;
+        }
+    }
+
+    /** Whether the apk at [sourceDir] actually holds the loader dex -- so a same-named non-manager is skipped. */
+    private static boolean carriesLoader(String sourceDir) {
+        try (var zip = new ZipFile(new File(sourceDir))) {
+            return zip.getEntry(Constants.LOADER_DEX_ASSET_PATH) != null;
+        } catch (Throwable t) {
+            return false;
         }
     }
 
