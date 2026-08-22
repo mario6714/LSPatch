@@ -133,6 +133,11 @@
     <string name="update_installing">正在安装…</string>
     <string name="update_channel_release">正式版</string>
     <string name="update_channel_debug">调试版</string>
+    <string name="update_channel_canary">预览版</string>
+    <string name="update_versions">版本历史</string>
+    <string name="update_installed">已安装</string>
+    <string name="update_older">较旧</string>
+    <string name="update_install_version">安装此版本</string>
     <string name="update_up_to_date">当前已是最新版本</string>
     <string name="update_check_failed">无法检查更新</string>
     <string name="update_no_notes">没有发行说明</string>

@@ -80,8 +80,14 @@ data class SelectModules(val requestedBy: String, val initialSelected: List<Stri
  */
 @Serializable data class LogTrace(val text: String) : Route
 
-/** What is in a build, and the installer's output while it is flashed. */
-@Serializable data object Update : Route
+/**
+ * The self-update / version-history page.
+ *
+ * [prerelease] opens it on the newest canary rather than the newest stable -- what the home version
+ * line asks for when it is tapped while no stable update is marked, reading the tap as a wish to see
+ * what is brewing rather than a mistaken check.
+ */
+@Serializable data class Update(val prerelease: Boolean = false) : Route
 
 /** The catalogue, as shared [TopLevelDestination]s -- labels come from the shared library. */
 val TOP_LEVEL_DESTINATIONS: List<TopLevelDestination> =

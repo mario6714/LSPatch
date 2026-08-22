@@ -1,6 +1,5 @@
 package org.lsposed.lspatch.ui.viewmodel
 
-import android.content.pm.ApplicationInfo
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -25,11 +24,11 @@ class HomeViewModel : ViewModel() {
     data class RepoStatus(val stars: Int, val forks: Int, val openIssues: Int, val license: String?)
 
     /**
-     * A newer LSPatch release than the installed one. [apkUrl] is the download URL of the manager
-     * apk that matches this build's variant (debug vs release); null when the release carries no such
-     * asset, in which case the UI falls back to opening [url] (the release page) in a browser.
+     * A newer stable LSPatch release than the installed one -- the sole cue the version line's update
+     * mark needs. Only its existence is read (the mark is on/off); the update page owns the notes,
+     * assets and install, so nothing more is carried here and there is no asset name to match wrong.
      */
-    data class Update(val version: String, val url: String, val notes: String, val apkUrl: String?)
+    data class Update(val version: String)
 
     var repo by mutableStateOf<RepoStatus?>(null)
         private set
@@ -81,23 +80,13 @@ class HomeViewModel : ViewModel() {
             val json = connection.inputStream.bufferedReader().use { it.readText() }
             val obj = JsonParser.parseString(json).asJsonObject
             val tag = obj.get("tag_name")?.takeIf { !it.isJsonNull }?.asString ?: return null
-            val url = obj.get("html_url")?.takeIf { !it.isJsonNull }?.asString ?: "$REPO_URL/releases"
-            val notes = obj.get("body")?.takeIf { !it.isJsonNull }?.asString.orEmpty().trim()
             val latest = tag.trimStart('v', 'V').trim()
             val current = LSPConfig.instance.VERSION_NAME.trimStart('v', 'V').trim()
-            // Never offer anything at or below the current build, nor older than the v0.8 baseline
+            // Never mark anything at or below the current build, nor older than the v0.8 baseline
             // (this UI first shipped in v0.8; earlier releases predate it and must not be surfaced).
+            // The endpoint is /releases/latest, which excludes prereleases, so the mark is stable-only.
             if (!isNewer(latest, current) || isNewer(MIN_VERSION, latest)) return null
-
-            // Pick the asset for this build's variant. A debuggable build was assembled as `debug`
-            // and must self-update from manager-debug.apk, not the release apk (different signing).
-            val debuggable = (lspApp.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
-            val wanted = if (debuggable) "manager-debug.apk" else "manager.apk"
-            val apkUrl = obj.getAsJsonArray("assets")
-                ?.map { it.asJsonObject }
-                ?.firstOrNull { it.get("name")?.asString == wanted }
-                ?.get("browser_download_url")?.takeIf { !it.isJsonNull }?.asString
-            Update(tag, url, notes, apkUrl)
+            Update(tag)
         } finally {
             connection.disconnect()
         }

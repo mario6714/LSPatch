@@ -251,5 +251,5 @@ private fun EntryProviderScope<NavKey>.registerRoutes(navigator: Navigator) {
     entry<AppDetail> { route -> AppDetailScreen(navigator, packageName = route.packageName) }
     entry<RepoDetails> { route -> RepoDetailsScreen(navigator, packageName = route.packageName) }
     entry<LogTrace> { route -> LogTraceScreen(navigator, text = route.text) }
-    entry<Update> { UpdateScreen(navigator) }
+    entry<Update> { route -> UpdateScreen(navigator, prerelease = route.prerelease) }
 }

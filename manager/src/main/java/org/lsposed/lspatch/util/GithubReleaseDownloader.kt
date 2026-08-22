@@ -16,8 +16,14 @@ object GithubReleaseDownloader {
     data class Result(val tagName: String, val assetName: String, val file: File)
 
     /**
-     * Downloads the latest manager APK from GitHub Releases.
-     * Prefers `manager.apk`, falls back to `manager-debug.apk`.
+     * Downloads the latest stable manager APK from GitHub Releases.
+     *
+     * `/releases/latest` resolves to the newest non-prerelease tag (canaries are published as
+     * prereleases), so recovery always lands on a stable build. The published assets are named
+     * `manager-v<ver>-<code>-release.apk` / `-debug.apk` (see the build's rename rule), so the match
+     * is by that shape -- the earlier exact `manager.apk` / `manager-debug.apk` literals never existed
+     * in a real release, which is why revert always failed with "No manager APK found". The release
+     * variant is preferred; the debug one is the fallback.
      */
     fun downloadLatestManager(dest: File): Result {
         dest.parentFile?.mkdirs()
@@ -37,14 +43,17 @@ object GithubReleaseDownloader {
             val asset = assets.getJSONObject(i)
             val name = asset.getString("name")
             val url = asset.getString("browser_download_url")
+            val isManagerApk =
+                name.startsWith("manager", ignoreCase = true) && name.endsWith(".apk", ignoreCase = true)
             when {
-                name.equals("manager.apk", ignoreCase = true) -> {
-                    preferredUrl = url
-                    preferredName = name
-                }
-                name.equals("manager-debug.apk", ignoreCase = true) -> {
+                !isManagerApk -> {} // Skip the .jar and any non-manager asset attached to the release.
+                name.contains("debug", ignoreCase = true) -> {
                     fallbackUrl = url
                     fallbackName = name
+                }
+                else -> {
+                    preferredUrl = url
+                    preferredName = name
                 }
             }
         }

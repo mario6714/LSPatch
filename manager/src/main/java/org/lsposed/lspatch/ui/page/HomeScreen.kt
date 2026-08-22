@@ -222,8 +222,14 @@ fun HomeScreen(navigator: Navigator) {
                 onOpenLanguage = { showLanguage = true },
                 detail = { contentColor ->
                     // Exactly Vector's version line: one UpdatableVersion carrying the version and the
-                    // API, marked when a newer release exists and tappable whether or not one does, so
-                    // the update page (and "you are up to date") is always reachable.
+                    // API, marked when a newer STABLE release exists and tappable whether or not one
+                    // does. The mark reflects only stable releases (Home's own check stays on
+                    // /releases/latest), so a lit mark always means a real update to install.
+                    //
+                    // The tap reads the state it is in: with a stable update marked it opens the
+                    // update page on that release; with nothing marked, tapping is taken as a wish to
+                    // see what is brewing, so it opens on the newest canary instead -- the one way in
+                    // to prereleases, offered only to someone who went looking.
                     val detailText = buildList {
                         // Version name with the version code beside it -- the same number the
                         // Manage screen labels an app's loader with, so "Loader 68" there and the
@@ -239,7 +245,7 @@ fun HomeScreen(navigator: Navigator) {
                         markColor = contentColor,
                         modifier =
                             Modifier.clickable {
-                                navigator.go(Update)
+                                navigator.go(Update(prerelease = update == null))
                             },
                     )
                 },

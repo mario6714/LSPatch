@@ -275,6 +275,11 @@
     <string name="update_installing">Installing…</string>
     <string name="update_channel_release">Release</string>
     <string name="update_channel_debug">Debug</string>
+    <string name="update_channel_canary">Canary</string>
+    <string name="update_versions">Version history</string>
+    <string name="update_installed">Installed</string>
+    <string name="update_older">Older</string>
+    <string name="update_install_version">Install this build</string>
     <string name="update_up_to_date">You\'re on the latest build</string>
     <string name="update_check_failed">Couldn\'t check for updates</string>
     <string name="update_no_notes">No release notes</string>
