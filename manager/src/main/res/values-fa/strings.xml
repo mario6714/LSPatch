@@ -78,7 +78,7 @@
     <string name="patch_sigbypasslv0">خاموش</string>
     <string name="patch_sigbypasslv1">+ مدیر بسته: اطلاعات امضا مانند نسخهٔ اصلی خوانده می‌شود</string>
     <string name="patch_sigbypasslv2">+ خواندن فایل: برنامه هنگام خواندن apk خودش نسخهٔ اصلی را می‌گیرد (libc)</string>
-    <string name="patch_sigbypasslv3">+ فراخوانی‌های سیستمی خام: خواندن‌های apk را که libc را دور می‌زنند می‌گیرد</string>
+    <string name="patch_sigbypasslv3">+ فراخوانی‌های سیستمی خام: خواندن‌های apk را که libc را دور می‌زنند می‌گیرد. کد بومی را وصله می‌کند، پس برنامه‌ای که کد خودش را بررسی می‌کند ممکن است آن را دستکاری‌شده تشخیص دهد — تا کافی نباشد سطح ۲ را ترجیح دهید.</string>
     <string name="patch_return">بازگشت</string>
     <string name="patch_uninstall_text">به دلیل تفاوت در امضاها، باید قبل از نصب نسخه پچ‌شده، برنامه اصلی را حذف نصب کنید.\nمطمئن شوید که از داده‌های شخصی خود نسخه پشتیبان تهیه کرده‌اید.</string>
     <string name="patch_install_successfully">نصب شد</string>

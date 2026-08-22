@@ -78,7 +78,7 @@
     <string name="patch_sigbypasslv0">Désactivé</string>
     <string name="patch_sigbypasslv1">+ Gestionnaire de paquets : les infos de signature apparaissent comme l\'original</string>
     <string name="patch_sigbypasslv2">+ Lectures de fichier : l\'app lisant son propre apk obtient l\'original (libc)</string>
-    <string name="patch_sigbypasslv3">+ Appels système bruts : capte les lectures d\'apk qui contournent libc</string>
+    <string name="patch_sigbypasslv3">+ Appels système bruts : capte les lectures d\'apk qui contournent libc. Modifie le code natif, donc une app qui vérifie son propre code peut le détecter comme falsifié — préférez le niveau 2 sauf lorsque cela ne suffit pas.</string>
     <string name="patch_return">Retour</string>
     <string name="patch_uninstall_text">En raison de signatures différentes, vous devez désinstaller l\'application d\'origine avant d\'installer la version patchée.\nAssurez-vous d\'avoir sauvegardé vos données personnelles.</string>
     <string name="patch_install_successfully">Installée</string>

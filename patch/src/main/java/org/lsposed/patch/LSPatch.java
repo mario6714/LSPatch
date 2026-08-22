@@ -41,7 +41,7 @@ public class LSPatch {
     @Parameter(names = {"-d", "--debuggable"}, description = "Set app to be debuggable")
     private boolean debuggableFlag = false;
 
-    @Parameter(names = {"-l", "--sigbypasslv"}, description = "Signature bypass level. 0 (disable), 1 (pm), 2 (pm+openat), 3 (pm+openat+svc, instruments raw-syscall apk reads). default 0")
+    @Parameter(names = {"-l", "--sigbypasslv"}, description = "Signature bypass level. 0 (disable), 1 (pm), 2 (pm+openat), 3 (pm+openat+svc, instruments raw-syscall apk reads; patches native code, so an app that verifies its own code may detect it -- prefer 2 unless it is not enough). default 0")
     private int sigbypassLevel = 0;
 
     @Parameter(names = {"--injectdex"}, description = "Inject directly the loder dex file into the original application package")

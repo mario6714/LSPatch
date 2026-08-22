@@ -78,7 +78,7 @@
     <string name="patch_sigbypasslv0">إيقاف</string>
     <string name="patch_sigbypasslv1">+ مدير الحزم: تظهر معلومات التوقيع كالأصلية</string>
     <string name="patch_sigbypasslv2">+ قراءة الملفات: يحصل التطبيق عند قراءة حزمته على الأصلية (libc)</string>
-    <string name="patch_sigbypasslv3">+ استدعاءات نظام خام: تلتقط قراءات الحزمة التي تتجاوز libc</string>
+    <string name="patch_sigbypasslv3">+ استدعاءات نظام خام: تلتقط قراءات الحزمة التي تتجاوز libc. يعدّل الشيفرة الأصلية، لذا قد يكتشفه تطبيق يتحقق من شيفرته كأنه تلاعب — يُفضّل المستوى 2 ما دام كافيًا.</string>
     <string name="patch_return">رجوع</string>
     <string name="patch_uninstall_text">بسبب اختلاف التواقيع، عليك إلغاء تثبيت التطبيق الأصلي قبل تثبيت التطبيق المُرقّع.\nتأكد من عمل نسخة احتياطية لبياناتك الشخصية.</string>
     <string name="patch_install_successfully">تم التثبيت</string>

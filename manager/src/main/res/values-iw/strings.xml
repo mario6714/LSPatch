@@ -78,7 +78,7 @@
     <string name="patch_sigbypasslv0">כבוי</string>
     <string name="patch_sigbypasslv1">+ מנהל החבילות: פרטי החתימה נקראים כמקוריים</string>
     <string name="patch_sigbypasslv2">+ קריאות קובץ: אפליקציה שקוראת את ה-apk שלה מקבלת את המקורי (libc)</string>
-    <string name="patch_sigbypasslv3">+ קריאות מערכת גולמיות: תופס קריאות apk שעוקפות את libc</string>
+    <string name="patch_sigbypasslv3">+ קריאות מערכת גולמיות: תופס קריאות apk שעוקפות את libc. מתקן קוד מקורי, כך שאפליקציה שבודקת את הקוד שלה עלולה לזהות זאת כשיבוש — העדיפו רמה 2 כל עוד היא מספיקה.</string>
     <string name="patch_return">חזור</string>
     <string name="patch_uninstall_text">בשל חתימות שונות, עליך להסיר את התקנת האפליקציה המקורית לפני התקנת זו עם הטלאי.\nודא שגיבית את הנתונים האישיים.</string>
     <string name="patch_install_successfully">הותקן</string>

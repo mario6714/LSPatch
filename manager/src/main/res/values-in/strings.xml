@@ -78,7 +78,7 @@
     <string name="patch_sigbypasslv0">Nonaktif</string>
     <string name="patch_sigbypasslv1">+ Package manager: info tanda tangan terbaca sebagai aslinya</string>
     <string name="patch_sigbypasslv2">+ Pembacaan berkas: aplikasi yang membaca apk-nya sendiri mendapat yang asli (libc)</string>
-    <string name="patch_sigbypasslv3">+ Syscall mentah: menangkap pembacaan apk yang melewati libc</string>
+    <string name="patch_sigbypasslv3">+ Syscall mentah: menangkap pembacaan apk yang melewati libc. Menambal kode native, sehingga aplikasi yang memverifikasi kodenya sendiri dapat menandainya sebagai dirusak — utamakan level 2 selama mencukupi.</string>
     <string name="patch_return">Kembali</string>
     <string name="patch_uninstall_text">Karena tanda tangan yang berbeda, Anda perlu mencopot aplikasi asli sebelum memasang versi yang ditambal.\nPastikan Anda telah mencadangkan data pribadi.</string>
     <string name="patch_install_successfully">Terpasang</string>

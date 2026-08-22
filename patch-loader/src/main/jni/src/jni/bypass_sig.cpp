@@ -245,6 +245,15 @@ VECTOR_DEF_NATIVE_METHOD(void, SigBypass, enableSvcRedirect) {
         g_originPrefix = oslash == std::string::npos ? redirectPath : redirectPath.substr(0, oslash);
         LOGD("svc redirect scope {} | {}", g_appDirPrefix.c_str(), g_originPrefix.c_str());
     }
+    // Patch each svc site with a single 4-byte `b` (to a near forwarding stub when the dispatch
+    // bridge is out of B range) instead of Dobby's default 12-byte adrp/add/br. A svc is frequently a
+    // tiny `svc; ret` wrapper; writing 12 bytes over its 4-byte first instruction overruns it and
+    // clobbers the next function's entry, and a later direct `BL` into that entry faults
+    // SIGILL/ILL_ILLOPC on the corrupted bytes. Near-branch trampolines keep every origin patch 4
+    // bytes wide, so nothing past the instrumented instruction is touched. Enabled once, before any
+    // DobbyInstrument/DobbyHook below.
+    static std::once_flag nearBranchOnce;
+    std::call_once(nearBranchOnce, dobby_enable_near_branch_trampoline);
     hookDlopen();   // catch the packer library, loaded after this point
     scanAppLibs();  // and anything already resident
     LOGD("enableSvcRedirect armed; {} svc site(s) instrumented so far", g_instrumented.size());

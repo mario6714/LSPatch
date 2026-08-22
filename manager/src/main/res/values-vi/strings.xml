@@ -78,7 +78,7 @@
     <string name="patch_sigbypasslv0">Tắt</string>
     <string name="patch_sigbypasslv1">+ Trình quản lý gói: thông tin chữ ký hiển thị như bản gốc</string>
     <string name="patch_sigbypasslv2">+ Đọc tệp: ứng dụng đọc apk của chính nó nhận được bản gốc (libc)</string>
-    <string name="patch_sigbypasslv3">+ Lời gọi hệ thống thô: bắt các lần đọc apk vượt qua libc</string>
+    <string name="patch_sigbypasslv3">+ Lời gọi hệ thống thô: bắt các lần đọc apk vượt qua libc. Vá mã native, nên ứng dụng tự kiểm tra mã của mình có thể coi đó là bị can thiệp — ưu tiên cấp 2 khi vẫn đủ dùng.</string>
     <string name="patch_return">Quay lại</string>
     <string name="patch_uninstall_text">Do chữ ký khác nhau, bạn cần gỡ ứng dụng gốc trước khi cài bản đã vá.\nHãy đảm bảo bạn đã sao lưu dữ liệu cá nhân.</string>
     <string name="patch_install_successfully">Đã cài đặt</string>

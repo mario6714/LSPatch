@@ -78,7 +78,7 @@
     <string name="patch_sigbypasslv0">Kapalı</string>
     <string name="patch_sigbypasslv1">+ Paket yöneticisi: imza bilgisi orijinal olarak okunur</string>
     <string name="patch_sigbypasslv2">+ Dosya okumaları: kendi apk\'sını okuyan uygulama orijinali alır (libc)</string>
-    <string name="patch_sigbypasslv3">+ Ham sistem çağrıları: libc\'yi atlayan apk okumalarını yakalar</string>
+    <string name="patch_sigbypasslv3">+ Ham sistem çağrıları: libc\'yi atlayan apk okumalarını yakalar. Yerel kodu yamalar, bu yüzden kendi kodunu doğrulayan bir uygulama bunu kurcalanmış olarak algılayabilir — yeterli olduğu sürece 2. seviyeyi tercih edin.</string>
     <string name="patch_return">Geri dön</string>
     <string name="patch_uninstall_text">Farklı imzalar nedeniyle, yamalıyı yüklemeden önce orijinal uygulamayı kaldırmanız gerekir.\nKişisel verilerinizi yedeklediğinizden emin olun.</string>
     <string name="patch_install_successfully">Yüklendi</string>
