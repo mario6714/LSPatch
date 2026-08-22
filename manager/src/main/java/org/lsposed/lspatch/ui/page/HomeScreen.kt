@@ -45,7 +45,7 @@ import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.AlertDialog
+import org.matrix.vector.ui.SharedAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
@@ -588,7 +588,7 @@ private fun ManagerPackageDialog(onDismiss: () -> Unit) {
     var newName by remember { mutableStateOf(PackageNameValidator.randomPackageName()) }
     var invalid by remember { mutableStateOf(false) }
 
-    AlertDialog(
+    SharedAlertDialog(
         onDismissRequest = { if (!running) onDismiss() },
         title = {
             Text(

@@ -24,6 +24,7 @@ import org.lsposed.lspatch.data.repository.RepoRepository
 import org.lsposed.lspatch.ui.appearance.LSPSettings
 import org.lsposed.lspatch.ui.navigation.RepoDetails
 import org.lsposed.lspatch.util.LSPNetwork
+import org.matrix.vector.ui.LocalDialogLocalizer
 import org.matrix.vector.ui.navigation.Navigator
 import org.matrix.vector.ui.net.DohSettingSection
 
@@ -59,10 +60,14 @@ fun RepoScreen(navigator: Navigator) {
     if (showNetwork) {
         val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden)
         ModalBottomSheet(onDismissRequest = { showNetwork = false }, sheetState = sheetState) {
-            // The whole manager's traffic goes through the one client, so this governs the Store,
-            // the update check and store downloads alike.
-            DohSettingSection(LSPSettings, LSPNetwork.dns.status, LSPNetwork.dns::retry)
-            Spacer(Modifier.height(24.dp))
+            // A sheet is its own window, which drops the in-app language override; re-apply it inside
+            // so this speaks the reader's language rather than the phone's.
+            LocalDialogLocalizer.current {
+                // The whole manager's traffic goes through the one client, so this governs the Store,
+                // the update check and store downloads alike.
+                DohSettingSection(LSPSettings, LSPNetwork.dns.status, LSPNetwork.dns::retry)
+                Spacer(Modifier.height(24.dp))
+            }
         }
     }
 }
